@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { subscribeUserProfile } from '../services/userProfile';
+import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
+import type { UserProfile } from '../types/models';
+import { formatCompactNumber } from '../utils/format';
 import videos from '../data/videos';
 
 const { width } = Dimensions.get('window');
@@ -12,12 +17,22 @@ const GRID_GAP = 2;
 const GRID_COLUMNS = 3;
 const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
-export default function ProfileScreen() {
+type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
+
+export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
-  const emailPrefix = user?.email?.split('@')[0];
-  const displayName = emailPrefix ?? 'Alex Carter';
-  const handle = emailPrefix ? `@${emailPrefix}` : '@alexcartermusic';
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeUserProfile(user.uid, setProfile);
+  }, [user]);
+
+  const displayName = profile?.displayName ?? 'Alex Carter';
+  const handle = profile?.handle ?? '@alexcartermusic';
+  const bio = profile?.bio ?? 'Musician | Creator | Dreamer';
+  const avatarUrl = profile?.avatarUrl ?? 'https://i.pravatar.cc/150?img=12';
 
   return (
     <View style={styles.container}>
@@ -29,22 +44,22 @@ export default function ProfileScreen() {
           </Text>
           <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.headerBadge} />
         </View>
-        <TouchableOpacity style={styles.headerAction} onPress={signOut}>
-          <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
+        <TouchableOpacity style={styles.headerAction} onPress={() => navigation.navigate('MoreMenu')}>
+          <Ionicons name="menu-outline" size={22} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.profileTop}>
         <LinearGradient colors={colors.gradient} style={styles.avatarRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.avatar} />
+          <Image source={{ uri: avatarUrl }} style={styles.avatar} />
         </LinearGradient>
 
         <Text style={styles.handle}>{handle}</Text>
 
         <View style={styles.statsRow}>
-          <Stat label="Following" value="230" />
-          <Stat label="Followers" value="125.8K" />
-          <Stat label="Likes" value="2.3M" />
+          <Stat label="Following" value={formatCompactNumber(profile?.followingCount ?? 230)} />
+          <Stat label="Followers" value={formatCompactNumber(profile?.followerCount ?? 125800)} />
+          <Stat label="Likes" value={formatCompactNumber(profile?.likeCount ?? 2300000)} />
         </View>
 
         <View style={styles.actionRow}>
@@ -59,7 +74,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.bio}>Musician | Creator | Dreamer</Text>
+        <Text style={styles.bio}>{bio}</Text>
         <Text style={styles.bioLine}>New song out now 🎵 👇</Text>
       </View>
 

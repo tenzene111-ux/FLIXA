@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence, getAuth, type Auth } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence, getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -30,4 +32,19 @@ if (Platform.OS === 'web') {
   }
 }
 
-export { app, auth };
+const db = getFirestore(app);
+const functions = getFunctions(app);
+
+// Opt-in local development against the Firebase Emulator Suite
+// (`firebase emulators:start`) instead of the live project. Set
+// EXPO_PUBLIC_USE_FIREBASE_EMULATOR=1 and, if testing on a physical device
+// or simulator, EXPO_PUBLIC_FIREBASE_EMULATOR_HOST to your machine's LAN IP
+// (defaults to localhost, which only works for web/same-machine testing).
+if (process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATOR === '1') {
+  const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST ?? 'localhost';
+  connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+  connectFirestoreEmulator(db, host, 8080);
+  connectFunctionsEmulator(functions, host, 5001);
+}
+
+export { app, auth, db, functions };

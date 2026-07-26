@@ -7,6 +7,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
+import { ensureUserProfile } from '../services/userProfile';
 
 type AuthContextValue = {
   user: User | null;
@@ -26,6 +27,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setInitializing(false);
+      if (nextUser) {
+        ensureUserProfile(nextUser).catch((err) => console.warn('ensureUserProfile failed', err));
+      }
     });
     return unsubscribe;
   }, []);

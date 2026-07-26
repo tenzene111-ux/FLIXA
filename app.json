@@ -8,9 +8,11 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0A0A18",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.flixa.app"
     },
     "android": {
+      "package": "com.flixa.app",
       "adaptiveIcon": {
         "backgroundColor": "#0A0A18",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,6 +23,7 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": ["expo-dev-client"]
   }
 }
