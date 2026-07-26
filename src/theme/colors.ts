@@ -13,6 +13,8 @@ export const colors = {
   gradientButton: ['#7C4DFF', '#FF3D8A'] as const,
   danger: '#FF4D6D',
   success: '#3DDC97',
+  surfaceLight: '#F4F2FF',
+  textOnLight: '#15142A',
 };
 
 export default colors;

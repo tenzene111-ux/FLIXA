@@ -11,6 +11,7 @@ const TOOLS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { icon: 'sparkles-outline', label: 'Beauty' },
   { icon: 'color-filter-outline', label: 'Filters' },
   { icon: 'timer-outline', label: 'Timer' },
+  { icon: 'color-wand-outline', label: 'Retouch' },
 ];
 
 const DURATIONS = ['10m', '60s', '15s', 'Photo', 'Text'] as const;
@@ -156,15 +157,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   durationPillActive: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.surfaceLight,
   },
   durationLabel: {
-    color: colors.textMuted,
+    color: colors.text,
     fontSize: 13,
     fontWeight: '600',
   },
   durationLabelActive: {
-    color: colors.text,
+    color: colors.textOnLight,
+    fontWeight: '700',
   },
   controlsRow: {
     flexDirection: 'row',

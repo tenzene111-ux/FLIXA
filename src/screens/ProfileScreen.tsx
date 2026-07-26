@@ -15,15 +15,20 @@ const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const displayName = user?.email ?? '@alexcartermusic';
+  const emailPrefix = user?.email?.split('@')[0];
+  const displayName = emailPrefix ?? 'Alex Carter';
+  const handle = emailPrefix ? `@${emailPrefix}` : '@alexcartermusic';
 
   return (
     <View style={styles.container}>
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.headerName} numberOfLines={1}>
-          {displayName}
-        </Text>
-        <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.headerBadge} />
+        <View style={styles.headerSpacer} />
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerName} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.headerBadge} />
+        </View>
         <TouchableOpacity style={styles.headerAction} onPress={signOut}>
           <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
         </TouchableOpacity>
@@ -33,6 +38,8 @@ export default function ProfileScreen() {
         <LinearGradient colors={colors.gradient} style={styles.avatarRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
           <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.avatar} />
         </LinearGradient>
+
+        <Text style={styles.handle}>{handle}</Text>
 
         <View style={styles.statsRow}>
           <Stat label="Following" value="230" />
@@ -108,6 +115,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 8,
   },
+  headerSpacer: {
+    width: 28,
+  },
+  headerCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerName: {
     color: colors.text,
     fontSize: 15,
@@ -118,8 +134,12 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
   headerAction: {
-    marginLeft: 'auto',
     padding: 4,
+  },
+  handle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 8,
   },
   profileTop: {
     alignItems: 'center',
@@ -165,14 +185,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   editButton: {
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
     borderRadius: 20,
     paddingVertical: 9,
     paddingHorizontal: 28,
   },
   editButtonLabel: {
-    color: colors.text,
+    color: colors.textOnLight,
     fontSize: 14,
     fontWeight: '700',
   },
