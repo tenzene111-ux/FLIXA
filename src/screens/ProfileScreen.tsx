@@ -1,12 +1,15 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import colors from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
 
 export default function ProfileScreen() {
+  const { user, signOut } = useAuth();
+
   return (
     <View style={styles.container}>
       <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.avatar} />
-      <Text style={styles.name}>@alexcartermusic</Text>
+      <Text style={styles.name}>{user?.email ?? '@alexcartermusic'}</Text>
       <Text style={styles.bio}>Musician | Creator | Dreamer</Text>
 
       <View style={styles.statsRow}>
@@ -14,6 +17,10 @@ export default function ProfileScreen() {
         <Stat label="Followers" value="125.8K" />
         <Stat label="Likes" value="2.3M" />
       </View>
+
+      <TouchableOpacity style={styles.signOutButton} onPress={signOut} activeOpacity={0.85}>
+        <Text style={styles.signOutLabel}>Log Out</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -69,5 +76,18 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     marginTop: 4,
+  },
+  signOutButton: {
+    marginTop: 40,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  signOutLabel: {
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
