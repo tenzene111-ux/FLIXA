@@ -1,12 +1,5 @@
 {
   "projects": {
     "default": "flixa-1c37a"
-  },
-  "targets": {
-    "flixa-1c37a": {
-      "storage": {
-        "flixa": ["flixa-1c37a.firebasestorage.app"]
-      }
-    }
   }
 }
