@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
-import videos from '../data/videos';
+import { subscribeFeedVideos } from '../services/videos';
 import colors from '../theme/colors';
+import type { FeedVideo } from '../types/models';
 
 const { height } = Dimensions.get('window');
 const ITEM_HEIGHT = height;
@@ -12,23 +13,53 @@ const ITEM_HEIGHT = height;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
+  const [videos, setVideos] = useState<FeedVideo[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => subscribeFeedVideos(setVideos), []);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+      setActiveIndex(viewableItems[0].index);
+    }
+  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+
+  const feedVideos = activeFeed === 'forYou' ? videos : [];
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={videos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <VideoCard post={item} />}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_HEIGHT}
-        decelerationRate="fast"
-        getItemLayout={(_, index) => ({
-          length: ITEM_HEIGHT,
-          offset: ITEM_HEIGHT * index,
-          index,
-        })}
-      />
+      {feedVideos.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons
+            name={activeFeed === 'following' ? 'people-outline' : 'videocam-outline'}
+            size={40}
+            color={colors.textDim}
+          />
+          <Text style={styles.emptyText}>
+            {activeFeed === 'following'
+              ? 'Videos from creators you follow will show up here.'
+              : 'No videos yet. Tap Create to post the first one!'}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={feedVideos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item, index }) => <VideoCard post={item} isActive={index === activeIndex} />}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({
+            length: ITEM_HEIGHT,
+            offset: ITEM_HEIGHT * index,
+            index,
+          })}
+        />
+      )}
 
       <View style={[styles.header, { top: insets.top + 8 }]} pointerEvents="box-none">
         <TouchableOpacity onPress={() => setActiveFeed('following')} style={styles.headerTab}>
@@ -56,6 +87,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 48,
+    gap: 12,
+  },
+  emptyText: {
+    color: colors.textDim,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   header: {
     position: 'absolute',

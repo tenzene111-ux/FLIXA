@@ -61,6 +61,7 @@ export type TrendingHashtag = {
   id: string;
   tag: string;
   viewCount: number;
+  category?: string;
 };
 
 export type ExploreCreator = {
@@ -69,4 +70,27 @@ export type ExploreCreator = {
   displayName: string;
   avatarUrl: string;
   followerCount: number;
+  category?: string;
+};
+
+export type FeedVideo = {
+  id: string;
+  uploaderId: string;
+  username: string;
+  userAvatar: string;
+  videoUrl: string;
+  caption: string;
+  song: string;
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+  createdAt: number;
+};
+
+export type VideoComment = {
+  id: string;
+  uid: string;
+  username: string;
+  text: string;
+  createdAt: number;
 };

@@ -1,11 +1,23 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import * as ImagePicker from 'expo-image-picker';
 import colors from '../theme/colors';
 import { TAB_BAR_HEIGHT } from '../theme/layout';
+import { useAuth } from '../context/AuthContext';
+import { createVideoPost, uploadVideoFile } from '../services/videos';
 
 const TOOLS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { icon: 'camera-reverse-outline', label: 'Flip' },
@@ -17,15 +29,76 @@ const TOOLS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
 ];
 
 const DURATIONS = ['10m', '60s', '15s', 'Photo', 'Text'] as const;
+const DURATION_SECONDS: Partial<Record<(typeof DURATIONS)[number], number>> = {
+  '10m': 600,
+  '60s': 60,
+  '15s': 15,
+};
 
 export default function UploadScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const { user } = useAuth();
   const [duration, setDuration] = useState<(typeof DURATIONS)[number]>('15s');
+  const [caption, setCaption] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  const postVideo = async (localUri: string) => {
+    if (!user) return;
+    setPosting(true);
+    try {
+      const videoUrl = await uploadVideoFile(user.uid, localUri);
+      const handle = user.email ? `@${user.email.split('@')[0]}` : '@you';
+      await createVideoPost({
+        uploaderId: user.uid,
+        username: handle,
+        userAvatar: `https://i.pravatar.cc/150?u=${user.uid}`,
+        videoUrl,
+        caption: caption.trim() || 'New video',
+        song: 'Original Sound',
+      });
+      setCaption('');
+      navigation.navigate('Home' as never);
+    } catch (err) {
+      Alert.alert('Upload failed', err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleCapture = async () => {
+    if (!user) return;
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera access needed', 'Enable camera permission in Settings to record a video.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: DURATION_SECONDS[duration] ?? 60,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await postVideo(result.assets[0].uri);
+    }
+  };
+
+  const handlePickFromGallery = async () => {
+    if (!user) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Photo library access needed', 'Enable photo library permission in Settings to upload a video.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'] });
+    if (!result.canceled && result.assets[0]) {
+      await postVideo(result.assets[0].uri);
+    }
+  };
 
   return (
     <View style={styles.container}>
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Home' as never)}>
           <BlurView intensity={35} tint="dark" style={styles.iconButton}>
             <Ionicons name="close" size={26} color={colors.text} />
           </BlurView>
@@ -62,14 +135,37 @@ export default function UploadScreen() {
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
       >
-        <MaterialCommunityIcons name="video-outline" size={48} color={colors.textMuted} />
-        <Text style={styles.previewHintText}>Camera preview goes here</Text>
+        {posting ? (
+          <>
+            <ActivityIndicator color={colors.text} size="large" />
+            <Text style={styles.previewHintText}>Uploading your video…</Text>
+          </>
+        ) : (
+          <>
+            <MaterialCommunityIcons name="video-outline" size={48} color={colors.textMuted} />
+            <Text style={styles.previewHintText}>Tap record, or pick a video from your library</Text>
+          </>
+        )}
       </LinearGradient>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 16 }]}>
+        <TextInput
+          value={caption}
+          onChangeText={setCaption}
+          placeholder="Add a caption..."
+          placeholderTextColor={colors.textDim}
+          style={styles.captionInput}
+          editable={!posting}
+        />
+
         <View style={styles.durationRow}>
           {DURATIONS.map((option) => (
-            <TouchableOpacity key={option} onPress={() => setDuration(option)} style={styles.durationItem}>
+            <TouchableOpacity
+              key={option}
+              onPress={() => setDuration(option)}
+              style={styles.durationItem}
+              disabled={posting}
+            >
               <View style={[styles.durationPill, duration === option && styles.durationPillActive]}>
                 <Text style={[styles.durationLabel, duration === option && styles.durationLabelActive]}>
                   {option}
@@ -80,7 +176,7 @@ export default function UploadScreen() {
         </View>
 
         <View style={styles.controlsRow}>
-          <TouchableOpacity style={styles.sideButton}>
+          <TouchableOpacity style={styles.sideButton} disabled={posting}>
             <LinearGradient
               colors={colors.gradient}
               style={styles.sideButtonChip}
@@ -92,7 +188,12 @@ export default function UploadScreen() {
             <Text style={styles.sideButtonLabel}>Effects</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.recordButtonOuter} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.recordButtonOuter}
+            activeOpacity={0.85}
+            onPress={handleCapture}
+            disabled={posting}
+          >
             <LinearGradient
               colors={colors.gradientButton}
               style={styles.recordButtonInner}
@@ -101,7 +202,7 @@ export default function UploadScreen() {
             />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.sideButton}>
+          <TouchableOpacity style={styles.sideButton} onPress={handlePickFromGallery} disabled={posting}>
             <BlurView intensity={35} tint="dark" style={styles.sideButtonChipDark}>
               <Ionicons name="images-outline" size={20} color={colors.text} />
             </BlurView>
@@ -177,13 +278,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+    paddingHorizontal: 40,
   },
   previewHintText: {
-    color: colors.textDim,
+    color: colors.textMuted,
     fontSize: 13,
+    textAlign: 'center',
   },
   bottomBar: {
     paddingTop: 12,
+  },
+  captionInput: {
+    marginHorizontal: 20,
+    marginBottom: 14,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 13,
   },
   durationRow: {
     flexDirection: 'row',

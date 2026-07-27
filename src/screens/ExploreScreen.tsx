@@ -28,6 +28,7 @@ export default function ExploreScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('Trending');
+  const [searchQuery, setSearchQuery] = useState('');
   const [hashtags, setHashtags] = useState<TrendingHashtag[]>([]);
   const [creators, setCreators] = useState<ExploreCreator[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -60,6 +61,26 @@ export default function ExploreScreen({ navigation }: Props) {
     }
   };
 
+  const query = searchQuery.trim().toLowerCase();
+
+  const categoryHashtags =
+    activeCategory === 'Trending'
+      ? hashtags
+      : hashtags.filter((h) => (h.category ?? 'Trending').toLowerCase() === activeCategory.toLowerCase());
+  const filteredHashtags = query
+    ? categoryHashtags.filter((h) => h.tag.toLowerCase().includes(query))
+    : categoryHashtags;
+
+  const categoryCreators =
+    activeCategory === 'Trending'
+      ? creators
+      : creators.filter((c) => (c.category ?? 'Trending').toLowerCase() === activeCategory.toLowerCase());
+  const filteredCreators = query
+    ? categoryCreators.filter(
+        (c) => c.displayName.toLowerCase().includes(query) || c.handle.toLowerCase().includes(query)
+      )
+    : categoryCreators;
+
   return (
     <View style={styles.container}>
       <View style={{ paddingTop: insets.top + 8 }}>
@@ -67,7 +88,18 @@ export default function ExploreScreen({ navigation }: Props) {
 
         <View style={styles.searchBar}>
           <Ionicons name="search" size={16} color={colors.textDim} />
-          <TextInput placeholder="Search" placeholderTextColor={colors.textDim} style={styles.searchInput} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search"
+            placeholderTextColor={colors.textDim}
+            style={styles.searchInput}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={16} color={colors.textDim} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <LinearGradient
@@ -101,7 +133,10 @@ export default function ExploreScreen({ navigation }: Props) {
           <Text style={styles.sectionTitle}>Trending Hashtags</Text>
           <Text style={styles.seeAll}>See all</Text>
         </View>
-        {hashtags.map((h) => (
+        {filteredHashtags.length === 0 && (
+          <Text style={styles.emptyText}>No hashtags found.</Text>
+        )}
+        {filteredHashtags.map((h) => (
           <View key={h.id} style={styles.hashtagRow}>
             <View style={styles.hashtagIcon}>
               <Ionicons name="pricetag" size={16} color={colors.pink} />
@@ -117,7 +152,10 @@ export default function ExploreScreen({ navigation }: Props) {
           <Text style={styles.sectionTitle}>Popular Creators</Text>
           <Text style={styles.seeAll}>See all</Text>
         </View>
-        {creators.map((c) => {
+        {filteredCreators.length === 0 && (
+          <Text style={styles.emptyText}>No creators found.</Text>
+        )}
+        {filteredCreators.map((c) => {
           const isFollowing = followingIds.has(c.id);
           return (
             <View key={c.id} style={styles.creatorRow}>
@@ -226,6 +264,11 @@ const styles = StyleSheet.create({
   seeAll: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  emptyText: {
+    color: colors.textDim,
+    fontSize: 13,
+    paddingVertical: 8,
   },
   hashtagRow: {
     flexDirection: 'row',

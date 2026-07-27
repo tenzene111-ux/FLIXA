@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentDeleted } from 'firebase-functions/v2/firestore';
 
 initializeApp();
 const db = getFirestore();
@@ -12,6 +12,25 @@ const db = getFirestore();
 export const initWalletOnUserCreate = onDocumentCreated('users/{uid}', async (event) => {
   const uid = event.params.uid;
   await db.doc(`wallets/${uid}`).set({ balance: 0 }, { merge: true });
+});
+
+// Like/comment counts are server-authoritative too, so a client can't
+// inflate its own post's numbers directly — only by actually creating a
+// like/comment doc, which these triggers turn into a count.
+export const onLikeCreate = onDocumentCreated('videos/{videoId}/likes/{uid}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ likeCount: FieldValue.increment(1) });
+});
+
+export const onLikeDelete = onDocumentDeleted('videos/{videoId}/likes/{uid}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ likeCount: FieldValue.increment(-1) });
+});
+
+export const onCommentCreate = onDocumentCreated('videos/{videoId}/comments/{commentId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ commentCount: FieldValue.increment(1) });
+});
+
+export const onCommentDelete = onDocumentDeleted('videos/{videoId}/comments/{commentId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ commentCount: FieldValue.increment(-1) });
 });
 
 async function applyWalletDelta(

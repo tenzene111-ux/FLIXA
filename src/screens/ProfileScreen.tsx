@@ -9,10 +9,12 @@ import colors from '../theme/colors';
 import { TAB_BAR_HEIGHT } from '../theme/layout';
 import { useAuth } from '../context/AuthContext';
 import { subscribeUserProfile } from '../services/userProfile';
+import { subscribeUserVideos, subscribeVideosByIds } from '../services/videos';
+import { subscribeSavedVideoIds } from '../services/savedVideos';
+import EditProfileModal from '../components/EditProfileModal';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
-import type { UserProfile } from '../types/models';
+import type { FeedVideo, UserProfile } from '../types/models';
 import { formatCompactNumber } from '../utils/format';
-import videos from '../data/videos';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 8;
@@ -20,22 +22,49 @@ const GRID_COLUMNS = 3;
 const GRID_PADDING = 14;
 const THUMB_SIZE = (width - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
+type GridTab = 'posts' | 'saved' | 'tagged';
+
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
 
 export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
+  const [gridTab, setGridTab] = useState<GridTab>('posts');
+  const [postedVideos, setPostedVideos] = useState<FeedVideo[]>([]);
+  const [savedVideoIds, setSavedVideoIds] = useState<string[]>([]);
+  const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
 
   useEffect(() => {
     if (!user) return;
     return subscribeUserProfile(user.uid, setProfile);
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    return subscribeUserVideos(user.uid, setPostedVideos);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeSavedVideoIds(user.uid, setSavedVideoIds);
+  }, [user]);
+
+  useEffect(() => subscribeVideosByIds(savedVideoIds, setSavedVideos), [savedVideoIds]);
+
   const displayName = profile?.displayName ?? 'Alex Carter';
   const handle = profile?.handle ?? '@alexcartermusic';
   const bio = profile?.bio ?? 'Musician | Creator | Dreamer';
   const avatarUrl = profile?.avatarUrl ?? 'https://i.pravatar.cc/150?img=12';
+
+  const gridVideos = gridTab === 'posts' ? postedVideos : gridTab === 'saved' ? savedVideos : [];
+  const gridEmptyMessage =
+    gridTab === 'posts'
+      ? 'No videos posted yet. Head to Create to post one!'
+      : gridTab === 'saved'
+        ? 'Videos you save will show up here.'
+        : 'No tagged videos yet.';
 
   return (
     <View style={styles.container}>
@@ -70,7 +99,7 @@ export default function ProfileScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.editButton} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.editButton} activeOpacity={0.85} onPress={() => setEditVisible(true)}>
             <Text style={styles.editButtonLabel}>Edit Profile</Text>
           </TouchableOpacity>
           <TouchableOpacity>
@@ -78,7 +107,7 @@ export default function ProfileScreen({ navigation }: Props) {
               <Ionicons name="image-outline" size={18} color={colors.text} />
             </BlurView>
           </TouchableOpacity>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => setGridTab('saved')}>
             <BlurView intensity={35} tint="dark" style={styles.iconButton}>
               <Ionicons name="bookmark-outline" size={18} color={colors.text} />
             </BlurView>
@@ -90,34 +119,41 @@ export default function ProfileScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.gridHeader}>
-        <View style={[styles.gridTab, styles.gridTabActive]}>
-          <Ionicons name="grid-outline" size={18} color={colors.text} />
-        </View>
-        <View style={styles.gridTab}>
-          <Ionicons name="bookmark-outline" size={18} color={colors.textDim} />
-        </View>
-        <View style={styles.gridTab}>
-          <Ionicons name="pricetag-outline" size={18} color={colors.textDim} />
-        </View>
+        <TouchableOpacity style={[styles.gridTab, gridTab === 'posts' && styles.gridTabActive]} onPress={() => setGridTab('posts')}>
+          <Ionicons name="grid-outline" size={18} color={gridTab === 'posts' ? colors.text : colors.textDim} />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.gridTab, gridTab === 'saved' && styles.gridTabActive]} onPress={() => setGridTab('saved')}>
+          <Ionicons name="bookmark-outline" size={18} color={gridTab === 'saved' ? colors.text : colors.textDim} />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.gridTab, gridTab === 'tagged' && styles.gridTabActive]} onPress={() => setGridTab('tagged')}>
+          <Ionicons name="pricetag-outline" size={18} color={gridTab === 'tagged' ? colors.text : colors.textDim} />
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.grid}>
-        {videos.map((video) => (
-          <LinearGradient
-            key={video.id}
-            colors={video.gradient}
-            style={styles.gridThumb}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-          >
-            <View style={styles.gridThumbViews}>
-              <Ionicons name="play" size={11} color={colors.text} />
-              <Text style={styles.gridThumbViewsLabel}>{video.likes}</Text>
+      {gridVideos.length === 0 ? (
+        <Text style={styles.gridEmptyText}>{gridEmptyMessage}</Text>
+      ) : (
+        <View style={styles.grid}>
+          {gridVideos.map((video) => (
+            <View key={video.id} style={styles.gridThumb}>
+              <View style={styles.gridThumbViews}>
+                <Ionicons name="play" size={11} color={colors.text} />
+                <Text style={styles.gridThumbViewsLabel}>{formatCompactNumber(video.likeCount)}</Text>
+              </View>
             </View>
-          </LinearGradient>
-        ))}
-      </View>
+          ))}
+        </View>
+      )}
       </ScrollView>
+
+      {user && (
+        <EditProfileModal
+          visible={editVisible}
+          uid={user.uid}
+          profile={profile}
+          onClose={() => setEditVisible(false)}
+        />
+      )}
     </View>
   );
 }
@@ -264,6 +300,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.text,
     marginTop: -1,
   },
+  gridEmptyText: {
+    color: colors.textDim,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 40,
+    paddingHorizontal: 48,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -278,6 +321,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'flex-end',
     padding: 6,
+    backgroundColor: colors.surfaceAlt,
   },
   gridThumbViews: {
     flexDirection: 'row',
