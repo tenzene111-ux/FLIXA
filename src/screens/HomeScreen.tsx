@@ -1,11 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View, type ViewToken } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type ViewToken,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
-import { subscribeFeedVideos } from '../services/videos';
+import { fetchFeedVideosPage, type FeedPage } from '../services/videos';
 import colors from '../theme/colors';
 import type { FeedVideo } from '../types/models';
+import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 
 const { height } = Dimensions.get('window');
 const ITEM_HEIGHT = height;
@@ -14,9 +26,52 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [videos, setVideos] = useState<FeedVideo[]>([]);
+  const [cursor, setCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  useEffect(() => subscribeFeedVideos(setVideos), []);
+  const applyPage = (page: FeedPage, append: boolean) => {
+    setVideos((prev) => (append ? [...prev, ...page.videos] : page.videos));
+    setCursor(page.cursor);
+    setHasMore(page.hasMore);
+  };
+
+  const loadFirstPage = useCallback(async () => {
+    const page = await fetchFeedVideosPage();
+    applyPage(page, false);
+  }, []);
+
+  // Feed reads are paginated, one-time fetches rather than a live listener
+  // (see services/videos.ts), so a freshly posted video won't push itself
+  // in automatically — refetching on focus is what surfaces it, the same
+  // way pulling to refresh does.
+  useFocusEffect(
+    useCallback(() => {
+      loadFirstPage();
+    }, [loadFirstPage])
+  );
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadFirstPage();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore || !cursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchFeedVideosPage(cursor);
+      applyPage(page, true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
@@ -53,6 +108,12 @@ export default function HomeScreen() {
           decelerationRate="fast"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={1.5}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text} />
+          }
+          ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.text} style={styles.loadMore} /> : null}
           getItemLayout={(_, index) => ({
             length: ITEM_HEIGHT,
             offset: ITEM_HEIGHT * index,
@@ -100,6 +161,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  loadMore: {
+    paddingVertical: 24,
   },
   header: {
     position: 'absolute',
