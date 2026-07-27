@@ -4,7 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "storage": {
-    "bucket": "flixa-1c37a.firebasestorage.app",
+    "target": "flixa",
     "rules": "storage.rules"
   },
   "functions": [
