@@ -84,7 +84,6 @@ export default function MainTabNavigator() {
 
 const styles = StyleSheet.create({
   centerButtonWrap: {
-    top: -18,
     alignItems: 'center',
     justifyContent: 'center',
   },
