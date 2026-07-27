@@ -25,7 +25,14 @@ export default function VideoCard({ post }: Props) {
 
       <View style={styles.rightActions}>
         <View style={styles.avatarWrap}>
-          <Image source={{ uri: post.avatar }} style={styles.avatarLarge} />
+          <LinearGradient
+            colors={colors.gradient}
+            style={styles.avatarRing}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Image source={{ uri: post.avatar }} style={styles.avatarLarge} />
+          </LinearGradient>
           <View style={styles.followBadge}>
             <Ionicons name="add" size={12} color={colors.text} />
           </View>
@@ -44,7 +51,7 @@ export default function VideoCard({ post }: Props) {
           <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.verifiedBadge} />
         </View>
         <Caption text={post.caption} />
-        <View style={styles.songRow}>
+        <View style={styles.songPill}>
           <Ionicons name="musical-notes" size={13} color={colors.text} />
           <Text style={styles.song} numberOfLines={1}>
             {post.song}
@@ -106,12 +113,24 @@ const styles = StyleSheet.create({
   avatarWrap: {
     marginBottom: 22,
   },
+  avatarRing: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.glowPurple,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   avatarLarge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
-    borderColor: colors.text,
+    borderColor: colors.background,
   },
   followBadge: {
     position: 'absolute',
@@ -125,6 +144,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: colors.background,
+    shadowColor: colors.glowPink,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 4,
   },
   actionItem: {
     alignItems: 'center',
@@ -180,9 +204,16 @@ const styles = StyleSheet.create({
     color: colors.cyan,
     fontWeight: '600',
   },
-  songRow: {
+  songPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   song: {
     color: colors.text,

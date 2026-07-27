@@ -36,15 +36,27 @@ export default function UploadScreen() {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.addSoundPill}>
-        <Ionicons name="musical-notes" size={14} color={colors.text} />
-        <Text style={styles.addSoundLabel}>Add Sound</Text>
-      </TouchableOpacity>
+      <LinearGradient
+        colors={colors.gradient}
+        style={styles.addSoundRing}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+      >
+        <TouchableOpacity style={styles.addSoundPill}>
+          <Ionicons name="musical-notes" size={14} color={colors.text} />
+          <Text style={styles.addSoundLabel}>Add Sound</Text>
+        </TouchableOpacity>
+      </LinearGradient>
 
-      <View style={styles.previewHint}>
-        <MaterialCommunityIcons name="video-outline" size={48} color={colors.textDim} />
+      <LinearGradient
+        colors={['#2A1145', '#0A0A18', '#0F1A3A']}
+        style={styles.previewHint}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+      >
+        <MaterialCommunityIcons name="video-outline" size={48} color={colors.textMuted} />
         <Text style={styles.previewHintText}>Camera preview goes here</Text>
-      </View>
+      </LinearGradient>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.durationRow}>
@@ -61,7 +73,14 @@ export default function UploadScreen() {
 
         <View style={styles.controlsRow}>
           <TouchableOpacity style={styles.sideButton}>
-            <Ionicons name="color-palette-outline" size={26} color={colors.text} />
+            <LinearGradient
+              colors={colors.gradient}
+              style={styles.sideButtonChip}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="color-palette-outline" size={20} color={colors.text} />
+            </LinearGradient>
             <Text style={styles.sideButtonLabel}>Effects</Text>
           </TouchableOpacity>
 
@@ -75,7 +94,9 @@ export default function UploadScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.sideButton}>
-            <Ionicons name="images-outline" size={26} color={colors.text} />
+            <View style={styles.sideButtonChipDark}>
+              <Ionicons name="images-outline" size={20} color={colors.text} />
+            </View>
             <Text style={styles.sideButtonLabel}>Upload</Text>
           </TouchableOpacity>
         </View>
@@ -110,16 +131,27 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   toolButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addSoundPill: {
+  addSoundRing: {
     position: 'absolute',
     top: 108,
     alignSelf: 'center',
+    borderRadius: 21,
+    padding: 1.5,
+    zIndex: 3,
+  },
+  addSoundPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#100E22',
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -176,8 +208,25 @@ const styles = StyleSheet.create({
   },
   sideButton: {
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     width: 56,
+  },
+  sideButtonChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sideButtonChipDark: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sideButtonLabel: {
     color: colors.textMuted,
@@ -192,6 +241,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.glowPink,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    elevation: 10,
   },
   recordButtonInner: {
     width: 60,

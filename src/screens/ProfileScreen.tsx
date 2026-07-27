@@ -13,9 +13,10 @@ import { formatCompactNumber } from '../utils/format';
 import videos from '../data/videos';
 
 const { width } = Dimensions.get('window');
-const GRID_GAP = 2;
+const GRID_GAP = 8;
 const GRID_COLUMNS = 3;
-const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+const GRID_PADDING = 14;
+const THUMB_SIZE = (width - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
 
@@ -67,7 +68,7 @@ export default function ProfileScreen({ navigation }: Props) {
             <Text style={styles.editButtonLabel}>Edit Profile</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="share-outline" size={18} color={colors.text} />
+            <Ionicons name="image-outline" size={18} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconButton}>
             <Ionicons name="bookmark-outline" size={18} color={colors.text} />
@@ -167,6 +168,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    shadowColor: colors.glowPurple,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 18,
+    elevation: 10,
   },
   avatar: {
     width: 92,
@@ -214,8 +220,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+    backgroundColor: colors.glass,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -250,10 +257,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: GRID_GAP,
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 12,
   },
   gridThumb: {
     width: THUMB_SIZE,
     height: THUMB_SIZE * 1.4,
+    borderRadius: 14,
+    overflow: 'hidden',
     justifyContent: 'flex-end',
     padding: 6,
   },

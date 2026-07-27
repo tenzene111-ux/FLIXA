@@ -15,6 +15,10 @@ export const colors = {
   success: '#3DDC97',
   surfaceLight: '#F4F2FF',
   textOnLight: '#15142A',
+  glass: 'rgba(255,255,255,0.09)',
+  glassBorder: 'rgba(255,255,255,0.16)',
+  glowPink: 'rgba(255,61,138,0.55)',
+  glowPurple: 'rgba(124,77,255,0.5)',
 };
 
 export default colors;
