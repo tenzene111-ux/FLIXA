@@ -13,6 +13,12 @@ export const colors = {
   gradientButton: ['#7C4DFF', '#FF3D8A'] as const,
   danger: '#FF4D6D',
   success: '#3DDC97',
+  surfaceLight: '#F4F2FF',
+  textOnLight: '#15142A',
+  glass: 'rgba(255,255,255,0.09)',
+  glassBorder: 'rgba(255,255,255,0.16)',
+  glowPink: 'rgba(255,61,138,0.55)',
+  glowPurple: 'rgba(124,77,255,0.5)',
 };
 
 export default colors;
