@@ -1,7 +1,9 @@
-import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase/config';
 import type { WalletTransaction } from '../types/models';
+
+const TRANSACTIONS_LIMIT = 100;
 
 function walletRef(uid: string) {
   return doc(db, 'wallets', uid);
@@ -14,7 +16,11 @@ export function subscribeWalletBalance(uid: string, onChange: (balance: number) 
 }
 
 export function subscribeWalletTransactions(uid: string, onChange: (items: WalletTransaction[]) => void) {
-  const q = query(collection(db, 'wallets', uid, 'transactions'), orderBy('createdAt', 'desc'));
+  const q = query(
+    collection(db, 'wallets', uid, 'transactions'),
+    orderBy('createdAt', 'desc'),
+    limit(TRANSACTIONS_LIMIT)
+  );
   return onSnapshot(q, (snap) => {
     onChange(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<WalletTransaction, 'id'>) })));
   });
