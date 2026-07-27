@@ -1,20 +1,25 @@
 import React from 'react';
 import { Dimensions, Image, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 import type { VideoPost } from '../data/videos';
 
 const { width, height } = Dimensions.get('window');
-const TAB_BAR_HEIGHT = 60;
 
 type Props = {
   post: VideoPost;
 };
 
 export default function VideoCard({ post }: Props) {
+  const insets = useSafeAreaInsets();
+  const navClearance = TAB_BAR_HEIGHT + insets.bottom;
+
   return (
-    <View style={[styles.card, { width, height: height - TAB_BAR_HEIGHT }]}>
+    <View style={[styles.card, { width, height }]}>
       <LinearGradient
         colors={post.gradient}
         style={StyleSheet.absoluteFill}
@@ -23,7 +28,7 @@ export default function VideoCard({ post }: Props) {
       />
       <View style={styles.scrim} pointerEvents="none" />
 
-      <View style={styles.rightActions}>
+      <View style={[styles.rightActions, { bottom: 110 + navClearance }]}>
         <View style={styles.avatarWrap}>
           <LinearGradient
             colors={colors.gradient}
@@ -45,18 +50,18 @@ export default function VideoCard({ post }: Props) {
         </View>
       </View>
 
-      <View style={styles.bottomInfo}>
+      <View style={[styles.bottomInfo, { paddingBottom: 20 + navClearance }]}>
         <View style={styles.usernameRow}>
           <Text style={styles.username}>{post.username}</Text>
           <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.verifiedBadge} />
         </View>
         <Caption text={post.caption} />
-        <View style={styles.songPill}>
+        <BlurView intensity={40} tint="dark" style={styles.songPill}>
           <Ionicons name="musical-notes" size={13} color={colors.text} />
           <Text style={styles.song} numberOfLines={1}>
             {post.song}
           </Text>
-        </View>
+        </BlurView>
       </View>
     </View>
   );
@@ -208,7 +213,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.glassBorder,
     borderRadius: 20,

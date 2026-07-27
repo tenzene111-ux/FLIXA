@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 import { useAuth } from '../context/AuthContext';
 import { subscribeUserProfile } from '../services/userProfile';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
@@ -50,6 +52,10 @@ export default function ProfileScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 16 }}
+      >
       <View style={styles.profileTop}>
         <LinearGradient colors={colors.gradient} style={styles.avatarRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
           <Image source={{ uri: avatarUrl }} style={styles.avatar} />
@@ -67,11 +73,15 @@ export default function ProfileScreen({ navigation }: Props) {
           <TouchableOpacity style={styles.editButton} activeOpacity={0.85}>
             <Text style={styles.editButtonLabel}>Edit Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="image-outline" size={18} color={colors.text} />
+          <TouchableOpacity>
+            <BlurView intensity={35} tint="dark" style={styles.iconButton}>
+              <Ionicons name="image-outline" size={18} color={colors.text} />
+            </BlurView>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="bookmark-outline" size={18} color={colors.text} />
+          <TouchableOpacity>
+            <BlurView intensity={35} tint="dark" style={styles.iconButton}>
+              <Ionicons name="bookmark-outline" size={18} color={colors.text} />
+            </BlurView>
           </TouchableOpacity>
         </View>
 
@@ -107,6 +117,7 @@ export default function ProfileScreen({ navigation }: Props) {
           </LinearGradient>
         ))}
       </View>
+      </ScrollView>
     </View>
   );
 }
@@ -220,7 +231,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.glassBorder,
     alignItems: 'center',

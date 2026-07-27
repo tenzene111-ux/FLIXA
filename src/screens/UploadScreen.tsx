@@ -3,7 +3,9 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 
 const TOOLS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { icon: 'camera-reverse-outline', label: 'Flip' },
@@ -23,14 +25,18 @@ export default function UploadScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.iconButton}>
-          <Ionicons name="close" size={26} color={colors.text} />
+        <TouchableOpacity>
+          <BlurView intensity={35} tint="dark" style={styles.iconButton}>
+            <Ionicons name="close" size={26} color={colors.text} />
+          </BlurView>
         </TouchableOpacity>
 
         <View style={styles.toolStack}>
           {TOOLS.map((tool) => (
-            <TouchableOpacity key={tool.label} style={styles.toolButton}>
-              <Ionicons name={tool.icon} size={22} color={colors.text} />
+            <TouchableOpacity key={tool.label}>
+              <BlurView intensity={35} tint="dark" style={styles.toolButton}>
+                <Ionicons name={tool.icon} size={22} color={colors.text} />
+              </BlurView>
             </TouchableOpacity>
           ))}
         </View>
@@ -42,9 +48,11 @@ export default function UploadScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >
-        <TouchableOpacity style={styles.addSoundPill}>
-          <Ionicons name="musical-notes" size={14} color={colors.text} />
-          <Text style={styles.addSoundLabel}>Add Sound</Text>
+        <TouchableOpacity>
+          <BlurView intensity={50} tint="dark" style={styles.addSoundPill}>
+            <Ionicons name="musical-notes" size={14} color={colors.text} />
+            <Text style={styles.addSoundLabel}>Add Sound</Text>
+          </BlurView>
         </TouchableOpacity>
       </LinearGradient>
 
@@ -58,7 +66,7 @@ export default function UploadScreen() {
         <Text style={styles.previewHintText}>Camera preview goes here</Text>
       </LinearGradient>
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 16 }]}>
         <View style={styles.durationRow}>
           {DURATIONS.map((option) => (
             <TouchableOpacity key={option} onPress={() => setDuration(option)} style={styles.durationItem}>
@@ -94,9 +102,9 @@ export default function UploadScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.sideButton}>
-            <View style={styles.sideButtonChipDark}>
+            <BlurView intensity={35} tint="dark" style={styles.sideButtonChipDark}>
               <Ionicons name="images-outline" size={20} color={colors.text} />
-            </View>
+            </BlurView>
             <Text style={styles.sideButtonLabel}>Upload</Text>
           </TouchableOpacity>
         </View>
@@ -122,7 +130,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -134,7 +144,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 12,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.glassBorder,
     alignItems: 'center',
@@ -151,7 +161,7 @@ const styles = StyleSheet.create({
   addSoundPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#100E22',
+    overflow: 'hidden',
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -222,7 +232,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 13,
-    backgroundColor: colors.glass,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.glassBorder,
     alignItems: 'center',

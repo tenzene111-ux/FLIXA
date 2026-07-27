@@ -7,7 +7,7 @@ export type VideoPost = {
   comments: string;
   shares: string;
   avatar: string;
-  gradient: readonly [string, string];
+  gradient: readonly [string, string, string];
 };
 
 export const videos: VideoPost[] = [
@@ -20,7 +20,7 @@ export const videos: VideoPost[] = [
     comments: '1,234',
     shares: '12.6K',
     avatar: 'https://i.pravatar.cc/100?img=32',
-    gradient: ['#2B1055', '#7597DE'],
+    gradient: ['#120A2E', '#4A2E8C', '#8FA8E8'],
   },
   {
     id: '2',
@@ -31,7 +31,7 @@ export const videos: VideoPost[] = [
     comments: '842',
     shares: '5.1K',
     avatar: 'https://i.pravatar.cc/100?img=12',
-    gradient: ['#41295a', '#2F0743'],
+    gradient: ['#180626', '#5B1E63', '#FF3D8A'],
   },
   {
     id: '3',
@@ -42,7 +42,7 @@ export const videos: VideoPost[] = [
     comments: '3,021',
     shares: '18.4K',
     avatar: 'https://i.pravatar.cc/100?img=45',
-    gradient: ['#FF9A8B', '#FF6A88'],
+    gradient: ['#2E0F3D', '#C6467E', '#FFB199'],
   },
   {
     id: '4',
@@ -53,7 +53,7 @@ export const videos: VideoPost[] = [
     comments: '612',
     shares: '4.4K',
     avatar: 'https://i.pravatar.cc/100?img=15',
-    gradient: ['#0F2027', '#2C5364'],
+    gradient: ['#050B14', '#123B4E', '#4FD8FF'],
   },
 ];
 

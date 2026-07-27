@@ -4,12 +4,14 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import HomeScreen from '../screens/HomeScreen';
 import UploadScreen from '../screens/UploadScreen';
 import InboxScreen from '../screens/InboxScreen';
 import DiscoverStackNavigator from './DiscoverStackNavigator';
 import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 
 const Tab = createBottomTabNavigator();
 
@@ -26,9 +28,14 @@ const NESTED_ROOT_ROUTE: Record<string, string> = {
 };
 
 const tabBarVisibleStyle = {
-  backgroundColor: colors.surface,
-  borderTopColor: colors.border,
-  height: 60,
+  backgroundColor: 'transparent',
+  borderTopColor: colors.glassBorder,
+  height: TAB_BAR_HEIGHT,
+  position: 'absolute' as const,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  elevation: 0,
 };
 
 export default function MainTabNavigator() {
@@ -45,6 +52,7 @@ export default function MainTabNavigator() {
           tabBarActiveTintColor: colors.text,
           tabBarInactiveTintColor: colors.textDim,
           tabBarStyle: hideTabBar ? { display: 'none' } : tabBarVisibleStyle,
+          tabBarBackground: () => <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFill} />,
           tabBarIcon: ({ color, focused }) => {
             if (route.name === 'Upload') {
               return (

@@ -7,8 +7,7 @@ import videos from '../data/videos';
 import colors from '../theme/colors';
 
 const { height } = Dimensions.get('window');
-const TAB_BAR_HEIGHT = 60;
-const ITEM_HEIGHT = height - TAB_BAR_HEIGHT;
+const ITEM_HEIGHT = height;
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();

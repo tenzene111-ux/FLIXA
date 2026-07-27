@@ -3,6 +3,7 @@ import { FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 import { useAuth } from '../context/AuthContext';
 import { subscribeNotifications } from '../services/notifications';
 import type { NotificationItem, NotificationType } from '../types/models';
@@ -74,7 +75,7 @@ export default function InboxScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 16 }]}
         renderItem={({ item }) => (
           <View style={styles.row}>
             <View style={styles.avatarWrap}>

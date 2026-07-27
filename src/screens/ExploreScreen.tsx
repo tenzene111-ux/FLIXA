@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { doc, getDoc } from 'firebase/firestore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import colors from '../theme/colors';
+import { TAB_BAR_HEIGHT } from '../theme/layout';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { followExploreCreator, subscribeExploreCreators, subscribeTrendingHashtags } from '../services/explore';
@@ -92,7 +93,10 @@ export default function ExploreScreen({ navigation }: Props) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 16 }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Trending Hashtags</Text>
           <Text style={styles.seeAll}>See all</Text>
