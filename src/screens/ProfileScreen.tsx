@@ -1,11 +1,12 @@
-import React from 'react';
-import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Dimensions, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import videos from '../data/videos';
+import { subscribeToUserPosts } from '../services/posts';
+import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 2;
@@ -15,7 +16,15 @@ const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const displayName = user?.email ?? '@alexcartermusic';
+  const displayName = user?.email ?? 'Flixa user';
+  const [posts, setPosts] = useState<Post[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToUserPosts(user.uid, setPosts, () => {});
+  }, [user]);
+
+  const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
 
   return (
     <View style={styles.container}>
@@ -23,69 +32,72 @@ export default function ProfileScreen() {
         <Text style={styles.headerName} numberOfLines={1}>
           {displayName}
         </Text>
-        <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.headerBadge} />
         <TouchableOpacity style={styles.headerAction} onPress={signOut}>
           <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.profileTop}>
-        <LinearGradient colors={colors.gradient} style={styles.avatarRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <Image source={{ uri: 'https://i.pravatar.cc/150?img=12' }} style={styles.avatar} />
-        </LinearGradient>
+      <FlatList
+        data={posts}
+        keyExtractor={(item) => item.id}
+        numColumns={GRID_COLUMNS}
+        columnWrapperStyle={styles.gridRow}
+        ListHeaderComponent={
+          <>
+            <View style={styles.profileTop}>
+              <LinearGradient
+                colors={colors.gradient}
+                style={styles.avatarRing}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
+                </View>
+              </LinearGradient>
 
-        <View style={styles.statsRow}>
-          <Stat label="Following" value="230" />
-          <Stat label="Followers" value="125.8K" />
-          <Stat label="Likes" value="2.3M" />
-        </View>
+              <View style={styles.statsRow}>
+                <Stat label="Videos" value={String(posts.length)} />
+                <Stat label="Likes" value={formatCount(totalLikes)} />
+              </View>
 
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.editButton} activeOpacity={0.85}>
-            <Text style={styles.editButtonLabel}>Edit Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="share-outline" size={18} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="bookmark-outline" size={18} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.bio}>Musician | Creator | Dreamer</Text>
-        <Text style={styles.bioLine}>New song out now 🎵 👇</Text>
-      </View>
-
-      <View style={styles.gridHeader}>
-        <View style={[styles.gridTab, styles.gridTabActive]}>
-          <Ionicons name="grid-outline" size={18} color={colors.text} />
-        </View>
-        <View style={styles.gridTab}>
-          <Ionicons name="bookmark-outline" size={18} color={colors.textDim} />
-        </View>
-        <View style={styles.gridTab}>
-          <Ionicons name="pricetag-outline" size={18} color={colors.textDim} />
-        </View>
-      </View>
-
-      <View style={styles.grid}>
-        {videos.map((video) => (
-          <LinearGradient
-            key={video.id}
-            colors={video.gradient}
-            style={styles.gridThumb}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-          >
-            <View style={styles.gridThumbViews}>
-              <Ionicons name="play" size={11} color={colors.text} />
-              <Text style={styles.gridThumbViewsLabel}>{video.likes}</Text>
+              <TouchableOpacity style={styles.editButton} activeOpacity={0.85}>
+                <Text style={styles.editButtonLabel}>Edit Profile</Text>
+              </TouchableOpacity>
             </View>
-          </LinearGradient>
-        ))}
-      </View>
+
+            <View style={styles.gridHeader}>
+              <View style={[styles.gridTab, styles.gridTabActive]}>
+                <Ionicons name="grid-outline" size={18} color={colors.text} />
+              </View>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="videocam-outline" size={40} color={colors.textDim} />
+            <Text style={styles.emptyTitle}>No videos yet</Text>
+            <Text style={styles.emptySubtitle}>Tap the + button to post your first video</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={styles.gridThumb}>
+            <Image source={{ uri: item.thumbnailUrl }} style={StyleSheet.absoluteFill} />
+            <View style={styles.gridThumbViews}>
+              <Ionicons name="heart" size={11} color={colors.text} />
+              <Text style={styles.gridThumbViewsLabel}>{formatCount(item.likesCount)}</Text>
+            </View>
+          </View>
+        )}
+      />
     </View>
   );
+}
+
+function formatCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -112,10 +124,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '700',
-    maxWidth: '70%',
-  },
-  headerBadge: {
-    marginLeft: 5,
+    maxWidth: '80%',
   },
   headerAction: {
     marginLeft: 'auto',
@@ -133,12 +142,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 8,
   },
-  avatar: {
+  avatarFallback: {
     width: 92,
     height: 92,
     borderRadius: 46,
     borderWidth: 3,
     borderColor: colors.background,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: '700',
   },
   statsRow: {
     flexDirection: 'row',
@@ -146,7 +163,7 @@ const styles = StyleSheet.create({
   },
   stat: {
     alignItems: 'center',
-    marginHorizontal: 20,
+    marginHorizontal: 24,
   },
   statValue: {
     color: colors.text,
@@ -158,42 +175,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 18,
-    gap: 10,
-  },
   editButton: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 20,
     paddingVertical: 9,
     paddingHorizontal: 28,
+    marginTop: 18,
   },
   editButtonLabel: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '700',
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bio: {
-    color: colors.text,
-    fontSize: 13,
-    marginTop: 16,
-  },
-  bioLine: {
-    color: colors.textMuted,
-    fontSize: 13,
-    marginTop: 2,
   },
   gridHeader: {
     flexDirection: 'row',
@@ -212,9 +205,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.text,
     marginTop: -1,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  gridRow: {
     gap: GRID_GAP,
   },
   gridThumb: {
@@ -222,6 +213,8 @@ const styles = StyleSheet.create({
     height: THUMB_SIZE * 1.4,
     justifyContent: 'flex-end',
     padding: 6,
+    marginBottom: GRID_GAP,
+    backgroundColor: colors.surfaceAlt,
   },
   gridThumbViews: {
     flexDirection: 'row',
@@ -232,5 +225,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 11,
     fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    gap: 6,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  emptySubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
 });

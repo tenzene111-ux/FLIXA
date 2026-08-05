@@ -1,83 +1,171 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import colors from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
+import { createPost } from '../services/posts';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
-const TOOLS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
-  { icon: 'camera-reverse-outline', label: 'Flip' },
-  { icon: 'speedometer-outline', label: 'Speed' },
-  { icon: 'sparkles-outline', label: 'Beauty' },
-  { icon: 'color-filter-outline', label: 'Filters' },
-  { icon: 'timer-outline', label: 'Timer' },
-];
+const MAX_DURATION_SECONDS = 60;
 
-const DURATIONS = ['10m', '60s', '15s', 'Photo', 'Text'] as const;
+type Selection = {
+  videoUri: string;
+  thumbnailUri: string;
+};
 
 export default function UploadScreen() {
   const insets = useSafeAreaInsets();
-  const [duration, setDuration] = useState<(typeof DURATIONS)[number]>('15s');
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const { user } = useAuth();
+
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [caption, setCaption] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const player = useVideoPlayer(selection?.videoUri ?? null, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  const buildSelection = async (videoUri: string) => {
+    try {
+      const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
+      setSelection({ videoUri, thumbnailUri });
+    } catch {
+      Alert.alert("Couldn't process that video", 'Please try a different clip.');
+    }
+  };
+
+  const handleRecord = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera permission needed', 'Enable camera access in Settings to record a video.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: MAX_DURATION_SECONDS,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await buildSelection(result.assets[0].uri);
+    }
+  };
+
+  const handlePickFromGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo library permission needed', 'Enable photo library access in Settings to pick a video.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+    });
+    if (!result.canceled && result.assets[0]) {
+      await buildSelection(result.assets[0].uri);
+    }
+  };
+
+  const handleDiscard = () => {
+    player.pause();
+    setSelection(null);
+    setCaption('');
+  };
+
+  const handlePost = async () => {
+    if (!selection || !user) return;
+    setUploading(true);
+    setProgress(0);
+    try {
+      await createPost({
+        uid: user.uid,
+        username: user.email ?? 'flixa user',
+        caption: caption.trim(),
+        videoUri: selection.videoUri,
+        thumbnailUri: selection.thumbnailUri,
+        onProgress: setProgress,
+      });
+      setSelection(null);
+      setCaption('');
+      navigation.navigate('Home');
+    } catch {
+      Alert.alert('Upload failed', 'Please check your connection and try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (!selection) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Ionicons name="videocam-outline" size={56} color={colors.textMuted} />
+        <Text style={styles.title}>Create a video</Text>
+        <Text style={styles.subtitle}>Record something new or upload from your gallery</Text>
+
+        <TouchableOpacity onPress={handleRecord} activeOpacity={0.85} style={styles.primaryButtonWrap}>
+          <LinearGradient
+            colors={colors.gradientButton}
+            style={styles.primaryButton}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Ionicons name="videocam" size={20} color={colors.text} />
+            <Text style={styles.primaryButtonLabel}>Record</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handlePickFromGallery} activeOpacity={0.85} style={styles.secondaryButton}>
+          <Ionicons name="images-outline" size={20} color={colors.text} />
+          <Text style={styles.secondaryButtonLabel}>Choose from Gallery</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <View style={[styles.topBar, { top: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.iconButton}>
-          <Ionicons name="close" size={26} color={colors.text} />
+      <View style={styles.preview}>
+        <VideoView player={player} style={styles.previewVideo} contentFit="cover" nativeControls={false} />
+        <TouchableOpacity style={[styles.closeButton, { top: insets.top + 8 }]} onPress={handleDiscard}>
+          <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
-
-        <View style={styles.toolStack}>
-          {TOOLS.map((tool) => (
-            <TouchableOpacity key={tool.label} style={styles.toolButton}>
-              <Ionicons name={tool.icon} size={22} color={colors.text} />
-            </TouchableOpacity>
-          ))}
-        </View>
       </View>
 
-      <TouchableOpacity style={styles.addSoundPill}>
-        <Ionicons name="musical-notes" size={14} color={colors.text} />
-        <Text style={styles.addSoundLabel}>Add Sound</Text>
-      </TouchableOpacity>
+      <View style={[styles.captionBar, { paddingBottom: insets.bottom + 16 }]}>
+        <TextInput
+          style={styles.captionInput}
+          placeholder="Write a caption..."
+          placeholderTextColor={colors.textDim}
+          value={caption}
+          onChangeText={setCaption}
+          multiline
+          editable={!uploading}
+        />
 
-      <View style={styles.previewHint}>
-        <MaterialCommunityIcons name="video-outline" size={48} color={colors.textDim} />
-        <Text style={styles.previewHintText}>Camera preview goes here</Text>
-      </View>
-
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.durationRow}>
-          {DURATIONS.map((option) => (
-            <TouchableOpacity key={option} onPress={() => setDuration(option)} style={styles.durationItem}>
-              <View style={[styles.durationPill, duration === option && styles.durationPillActive]}>
-                <Text style={[styles.durationLabel, duration === option && styles.durationLabelActive]}>
-                  {option}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.controlsRow}>
-          <TouchableOpacity style={styles.sideButton}>
-            <Ionicons name="color-palette-outline" size={26} color={colors.text} />
-            <Text style={styles.sideButtonLabel}>Effects</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.recordButtonOuter} activeOpacity={0.85}>
-            <LinearGradient
-              colors={colors.gradientButton}
-              style={styles.recordButtonInner}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.sideButton}>
-            <Ionicons name="images-outline" size={26} color={colors.text} />
-            <Text style={styles.sideButtonLabel}>Upload</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={handlePost} disabled={uploading} activeOpacity={0.85}>
+          <LinearGradient
+            colors={colors.gradientButton}
+            style={[styles.postButton, uploading && styles.postButtonDisabled]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            {uploading ? (
+              <>
+                <ActivityIndicator color={colors.text} size="small" />
+                <Text style={styles.postButtonLabel}>{Math.round(progress * 100)}%</Text>
+              </>
+            ) : (
+              <Text style={styles.postButtonLabel}>Post</Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -88,112 +176,101 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  topBar: {
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 16,
+  },
+  subtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 32,
+  },
+  primaryButtonWrap: {
+    width: '100%',
+    marginBottom: 14,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 30,
+    gap: 8,
+  },
+  primaryButtonLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+    width: '100%',
+  },
+  secondaryButtonLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  preview: {
+    flex: 1,
+  },
+  previewVideo: {
+    flex: 1,
+  },
+  closeButton: {
     position: 'absolute',
     left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    zIndex: 2,
-  },
-  iconButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toolStack: {
-    alignItems: 'center',
-    gap: 20,
-  },
-  toolButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addSoundPill: {
-    position: 'absolute',
-    top: 108,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    gap: 6,
-  },
-  addSoundLabel: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  previewHint: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  captionBar: {
+    padding: 16,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
     gap: 12,
   },
-  previewHintText: {
-    color: colors.textDim,
-    fontSize: 13,
-  },
-  bottomBar: {
-    paddingTop: 12,
-  },
-  durationRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 22,
-  },
-  durationItem: {
-    marginHorizontal: 4,
-  },
-  durationPill: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-  },
-  durationPillActive: {
-    backgroundColor: colors.surfaceAlt,
-  },
-  durationLabel: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  durationLabelActive: {
+  captionInput: {
     color: colors.text,
+    fontSize: 14,
+    maxHeight: 80,
   },
-  controlsRow: {
+  postButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 40,
-  },
-  sideButton: {
-    alignItems: 'center',
-    gap: 4,
-    width: 56,
-  },
-  sideButtonLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  recordButtonOuter: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.85)',
-    alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 24,
+    gap: 8,
   },
-  recordButtonInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  postButtonDisabled: {
+    opacity: 0.7,
+  },
+  postButtonLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
-import { Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type ViewToken,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
-import videos from '../data/videos';
 import colors from '../theme/colors';
+import { subscribeToFeed } from '../services/posts';
+import type { Post } from '../types/post';
 
 const { height } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 60;
@@ -13,23 +23,64 @@ const ITEM_HEIGHT = height - TAB_BAR_HEIGHT;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToFeed(
+      (nextPosts) => {
+        setPosts(nextPosts);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsubscribe;
+  }, []);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (viewableItems.length > 0) {
+      setActiveId(String(viewableItems[0].key));
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
+
+  const renderItem = useCallback(
+    ({ item }: { item: Post }) => <VideoCard post={item} isActive={item.id === activeId} />,
+    [activeId]
+  );
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={videos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <VideoCard post={item} />}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_HEIGHT}
-        decelerationRate="fast"
-        getItemLayout={(_, index) => ({
-          length: ITEM_HEIGHT,
-          offset: ITEM_HEIGHT * index,
-          index,
-        })}
-      />
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : posts.length === 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="videocam-outline" size={48} color={colors.textDim} />
+          <Text style={styles.emptyTitle}>No videos yet</Text>
+          <Text style={styles.emptySubtitle}>Be the first to post on Flixa</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({
+            length: ITEM_HEIGHT,
+            offset: ITEM_HEIGHT * index,
+            index,
+          })}
+        />
+      )}
 
       <View style={[styles.header, { top: insets.top + 8 }]} pointerEvents="box-none">
         <TouchableOpacity onPress={() => setActiveFeed('following')} style={styles.headerTab}>
@@ -57,6 +108,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  emptySubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   header: {
     position: 'absolute',

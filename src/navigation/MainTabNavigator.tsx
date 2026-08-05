@@ -8,7 +8,13 @@ import UploadScreen from '../screens/UploadScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import colors from '../theme/colors';
 
-const Tab = createBottomTabNavigator();
+export type MainTabParamList = {
+  Home: undefined;
+  Upload: undefined;
+  Profile: undefined;
+};
+
+const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   Home: 'home',

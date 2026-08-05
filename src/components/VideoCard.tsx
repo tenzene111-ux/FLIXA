@@ -1,57 +1,105 @@
-import React from 'react';
-import { Dimensions, Image, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-import type { VideoPost } from '../data/videos';
+import { useAuth } from '../context/AuthContext';
+import { subscribeToLikeState, toggleLike } from '../services/posts';
+import type { Post } from '../types/post';
 
 const { width, height } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 60;
 
 type Props = {
-  post: VideoPost;
+  post: Post;
+  isActive: boolean;
 };
 
-export default function VideoCard({ post }: Props) {
+export default function VideoCard({ post, isActive }: Props) {
+  const { user } = useAuth();
+  const [liked, setLiked] = useState(false);
+
+  const player = useVideoPlayer(post.videoUrl, (p) => {
+    p.loop = true;
+  });
+
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+
+  useEffect(() => {
+    if (isActive) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, player]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToLikeState(post.id, user.uid, setLiked);
+  }, [post.id, user]);
+
+  const handleLike = () => {
+    if (!user) return;
+    toggleLike(post.id, user.uid).catch(() => {});
+  };
+
+  const handleShare = () => {
+    Share.share({
+      message: post.caption ? `${post.caption}\n${post.videoUrl}` : post.videoUrl,
+      url: post.videoUrl,
+    }).catch(() => {});
+  };
+
+  const togglePlayback = () => {
+    if (player.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
+  };
+
   return (
-    <View style={[styles.card, { width, height: height - TAB_BAR_HEIGHT }]}>
-      <LinearGradient
-        colors={post.gradient}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-      />
+    <Pressable style={[styles.card, { width, height: height - TAB_BAR_HEIGHT }]} onPress={togglePlayback}>
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+
+      {!isPlaying && (
+        <View style={styles.pauseOverlay} pointerEvents="none">
+          <Ionicons name="play" size={64} color="rgba(255,255,255,0.85)" />
+        </View>
+      )}
+
       <View style={styles.scrim} pointerEvents="none" />
 
       <View style={styles.rightActions}>
-        <View style={styles.avatarWrap}>
-          <Image source={{ uri: post.avatar }} style={styles.avatarLarge} />
-          <View style={styles.followBadge}>
-            <Ionicons name="add" size={12} color={colors.text} />
-          </View>
+        <View style={styles.avatarPlaceholder}>
+          <Text style={styles.avatarInitial}>{post.username.charAt(0).toUpperCase()}</Text>
         </View>
-        <ActionIcon icon="heart" label={post.likes} color={colors.pink} />
-        <ActionIcon icon="chatbubble-ellipses" label={post.comments} />
-        <ActionIcon icon="arrow-redo" label={post.shares} />
+
+        <Pressable onPress={handleLike} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? colors.pink : colors.text} />
+          <Text style={styles.actionLabel}>{post.likesCount}</Text>
+        </Pressable>
+
+        <View style={styles.actionItem}>
+          <Ionicons name="chatbubble-ellipses" size={30} color={colors.text} />
+          <Text style={styles.actionLabel}>0</Text>
+        </View>
+
+        <Pressable onPress={handleShare} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="arrow-redo" size={30} color={colors.text} />
+        </Pressable>
+
         <View style={styles.discSpin}>
-          <Image source={{ uri: post.avatar }} style={styles.discImage} />
+          <Image source={{ uri: post.thumbnailUrl }} style={styles.discImage} />
         </View>
       </View>
 
       <View style={styles.bottomInfo}>
-        <View style={styles.usernameRow}>
-          <Text style={styles.username}>{post.username}</Text>
-          <Ionicons name="checkmark-circle" size={15} color={colors.cyan} style={styles.verifiedBadge} />
-        </View>
-        <Caption text={post.caption} />
-        <View style={styles.songRow}>
-          <Ionicons name="musical-notes" size={13} color={colors.text} />
-          <Text style={styles.song} numberOfLines={1}>
-            {post.song}
-          </Text>
-        </View>
+        <Text style={styles.username}>{post.username}</Text>
+        {post.caption ? <Caption text={post.caption} /> : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -72,30 +120,19 @@ function Caption({ text }: { text: string }) {
   );
 }
 
-function ActionIcon({
-  icon,
-  label,
-  color = colors.text,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  color?: string;
-}) {
-  return (
-    <View style={styles.actionItem}>
-      <Ionicons name={icon} size={30} color={color} />
-      <Text style={styles.actionLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   card: {
     justifyContent: 'flex-end',
+    backgroundColor: colors.background,
+  },
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(4,3,15,0.25)',
+    backgroundColor: 'rgba(4,3,15,0.15)',
   },
   rightActions: {
     position: 'absolute',
@@ -103,28 +140,21 @@ const styles = StyleSheet.create({
     bottom: 110,
     alignItems: 'center',
   },
-  avatarWrap: {
-    marginBottom: 22,
-  },
-  avatarLarge: {
+  avatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
     borderWidth: 2,
     borderColor: colors.text,
-  },
-  followBadge: {
-    position: 'absolute',
-    bottom: -8,
-    alignSelf: 'center',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.pink,
+    marginBottom: 22,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.background,
+  },
+  avatarInitial: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
   },
   actionItem: {
     alignItems: 'center',
@@ -147,6 +177,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.surface,
     overflow: 'hidden',
+    backgroundColor: colors.surfaceAlt,
   },
   discImage: {
     width: '100%',
@@ -157,37 +188,19 @@ const styles = StyleSheet.create({
     paddingRight: 90,
     paddingBottom: 20,
   },
-  usernameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
   username: {
     color: colors.text,
     fontSize: 16,
     fontWeight: '700',
-  },
-  verifiedBadge: {
-    marginLeft: 5,
+    marginBottom: 6,
   },
   caption: {
     color: colors.text,
     fontSize: 14,
     lineHeight: 19,
-    marginBottom: 8,
   },
   hashtag: {
     color: colors.cyan,
     fontWeight: '600',
-  },
-  songRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  song: {
-    color: colors.text,
-    fontSize: 13,
-    marginLeft: 6,
-    flexShrink: 1,
   },
 });
