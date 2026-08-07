@@ -1,5 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Image, PanResponder, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +23,8 @@ import { incrementView, subscribeToLikeState, toggleLike } from '../services/pos
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
-import { spendCoins } from '../services/wallet';
+import { sendGift } from '../services/wallet';
+import { subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
 import OverlayLayer from './OverlayLayer';
 import PollCard from './PollCard';
@@ -36,8 +50,11 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sendingGift, setSendingGift] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<GiftLeaderboardEntry[]>([]);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
+  const giftBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
   const discAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -88,6 +105,13 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     return subscribeIsSaved(user.uid, post.id, setSaved);
   }, [post.id, user]);
 
+  // Only subscribed while the leaderboard modal is actually open, so idle
+  // feed cards don't each carry a live gifts listener.
+  useEffect(() => {
+    if (!showLeaderboard) return;
+    return subscribeToGiftLeaderboard(post.id, setLeaderboard);
+  }, [showLeaderboard, post.id]);
+
   useEffect(() => {
     if (isPlaying) {
       discAnimationRef.current = Animated.loop(
@@ -119,16 +143,26 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     logEvent(saved ? 'unsave' : 'save', user.uid, { postId: post.id });
   };
 
+  const triggerGiftBurst = () => {
+    giftBurst.setValue(0);
+    Animated.sequence([
+      Animated.spring(giftBurst, { toValue: 1, useNativeDriver: true, friction: 4 }),
+      Animated.timing(giftBurst, { toValue: 0, duration: 300, delay: 500, useNativeDriver: true }),
+    ]).start();
+  };
+
   const handleSendGift = () => {
-    if (!user || sendingGift) return;
+    if (!user || sendingGift || !viewerProfile) return;
     if (user.uid === post.uid) {
       Alert.alert("Can't gift your own video");
       return;
     }
     setSendingGift(true);
-    spendCoins({ item: 'live_gift' })
+    // Payment (the coin debit) is confirmed by the callable resolving —
+    // the burst animation only plays after that, never before.
+    sendGift({ videoId: post.id, toUid: post.uid, fromUsername: viewerProfile.username })
       .then(() => {
-        Alert.alert('Gift sent', 'You sent a gift for 500 coins.');
+        triggerGiftBurst();
         logEvent('gift_sent', user.uid, { postId: post.id });
       })
       .catch((error) => {
@@ -251,6 +285,19 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
         <Ionicons name="heart" size={110} color={colors.pink} />
       </Animated.View>
 
+      <Animated.View
+        style={[
+          styles.heartBurst,
+          {
+            opacity: giftBurst,
+            transform: [{ scale: giftBurst.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.3] }) }],
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <Ionicons name="gift" size={100} color={colors.primary} />
+      </Animated.View>
+
       <TouchableMoreButton onPress={handleMoreOptions} />
 
       <View style={styles.rightActions}>
@@ -284,6 +331,10 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           <Ionicons name="gift-outline" size={28} color={colors.text} />
         </Pressable>
 
+        <Pressable onPress={() => setShowLeaderboard(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="trophy-outline" size={26} color={colors.text} />
+        </Pressable>
+
         <Animated.View style={[styles.discSpin, { transform: [{ rotate: discSpin }] }]}>
           <Image source={{ uri: post.thumbnailUrl }} style={styles.discImage} />
         </Animated.View>
@@ -314,6 +365,37 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
         <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
       </Pressable>
+
+      <Modal visible={showLeaderboard} transparent animationType="slide" onRequestClose={() => setShowLeaderboard(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Top Gifters</Text>
+              <Pressable onPress={() => setShowLeaderboard(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Done</Text>
+              </Pressable>
+            </View>
+            <FlatList
+              data={leaderboard}
+              keyExtractor={(item) => item.uid}
+              contentContainerStyle={styles.leaderboardList}
+              ListEmptyComponent={<Text style={styles.leaderboardEmpty}>No gifts yet</Text>}
+              renderItem={({ item, index }) => (
+                <View style={styles.leaderboardRow}>
+                  <Text style={styles.leaderboardRank}>#{index + 1}</Text>
+                  <Text style={styles.leaderboardName} numberOfLines={1}>
+                    @{item.username}
+                  </Text>
+                  <View style={styles.leaderboardAmount}>
+                    <Ionicons name="diamond" size={13} color={colors.cyan} />
+                    <Text style={styles.leaderboardAmountLabel}>{item.totalDiamonds}</Text>
+                  </View>
+                </View>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -477,5 +559,72 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: colors.text,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalDone: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  leaderboardList: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  leaderboardEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 24,
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  leaderboardRank: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    width: 28,
+  },
+  leaderboardName: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  leaderboardAmount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  leaderboardAmountLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

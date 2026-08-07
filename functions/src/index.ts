@@ -11,7 +11,7 @@ const db = getFirestore();
 // profile is created client-side.
 export const initWalletOnUserCreate = onDocumentCreated('users/{uid}', async (event) => {
   const uid = event.params.uid;
-  await db.doc(`wallets/${uid}`).set({ balance: 0 }, { merge: true });
+  await db.doc(`wallets/${uid}`).set({ balance: 0, diamonds: 0 }, { merge: true });
 });
 
 // Like/comment counts are server-authoritative too, so a client can't
@@ -80,6 +80,52 @@ export const spendCoins = onCall<{ item: keyof typeof SPEND_CATALOG }>(async (re
   const entry = SPEND_CATALOG[request.data.item];
   if (!entry) throw new HttpsError('invalid-argument', 'Unknown spend item.');
   return applyWalletDelta(request.auth.uid, -entry.cost, 'gift', entry.label);
+});
+
+// Sending a gift on a video is the one spend that has a recipient: unlike
+// spendCoins above (which only debits the caller), this debits the sender's
+// coin balance AND credits the video owner's diamond balance in the same
+// transaction, then records the gift so a per-video leaderboard can be
+// built from it (clients can only read videos/{id}/gifts, never write it —
+// every entry here is backed by a real coin movement).
+const GIFT_COST = 500;
+const GIFT_DIAMONDS = 500; // 1:1 coins-to-diamonds; real platforms take a cut, this doesn't yet.
+
+export const sendGift = onCall<{ videoId: string; toUid: string; fromUsername: string }>(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const { videoId, toUid, fromUsername } = request.data;
+  const fromUid = request.auth.uid;
+  if (!videoId || !toUid) throw new HttpsError('invalid-argument', 'Missing videoId or toUid.');
+  if (fromUid === toUid) throw new HttpsError('failed-precondition', "Can't gift your own video.");
+
+  const senderWalletRef = db.doc(`wallets/${fromUid}`);
+  const recipientWalletRef = db.doc(`wallets/${toUid}`);
+  const senderTxRef = db.collection(`wallets/${fromUid}/transactions`).doc();
+  const giftRef = db.collection(`videos/${videoId}/gifts`).doc();
+
+  return db.runTransaction(async (tx) => {
+    const senderSnap = await tx.get(senderWalletRef);
+    const currentBalance = senderSnap.exists ? (senderSnap.data()?.balance as number) ?? 0 : 0;
+    const nextBalance = currentBalance - GIFT_COST;
+    if (nextBalance < 0) {
+      throw new HttpsError('failed-precondition', 'Insufficient balance.');
+    }
+
+    const recipientSnap = await tx.get(recipientWalletRef);
+    const currentDiamonds = recipientSnap.exists ? (recipientSnap.data()?.diamonds as number) ?? 0 : 0;
+
+    tx.set(senderWalletRef, { balance: nextBalance }, { merge: true });
+    tx.set(senderTxRef, { type: 'gift', label: 'Gift Sent', amount: -GIFT_COST, createdAt: Date.now() });
+    tx.set(recipientWalletRef, { diamonds: currentDiamonds + GIFT_DIAMONDS }, { merge: true });
+    tx.set(giftRef, {
+      fromUid,
+      fromUsername: fromUsername || 'Someone',
+      amount: GIFT_DIAMONDS,
+      createdAt: Date.now(),
+    });
+
+    return { balance: nextBalance };
+  });
 });
 
 // Maps App Store / Play Console product IDs to the coin amount they grant.

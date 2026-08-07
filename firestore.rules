@@ -40,6 +40,14 @@ service cloud.firestore {
         allow create: if isOwner(uid) && request.resource.data.optionId is string;
         allow update, delete: if false;
       }
+
+      // Gift records back a per-video leaderboard. Only the sendGift Cloud
+      // Function (Admin SDK, bypasses these rules) may write one, so every
+      // entry here is tied to a real coin/diamond transfer.
+      match /gifts/{giftId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
     }
 
     // ---- Shared user profiles ----

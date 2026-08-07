@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToWalletBalance, subscribeToWalletTransactions } from '../services/wallet';
+import { subscribeToDiamondBalance, subscribeToWalletBalance, subscribeToWalletTransactions } from '../services/wallet';
 import type { WalletTransaction } from '../types/wallet';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
 
@@ -23,11 +23,17 @@ export default function WalletScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const { user } = useAuth();
   const [balance, setBalance] = useState(0);
+  const [diamonds, setDiamonds] = useState(0);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
 
   useEffect(() => {
     if (!user) return;
     return subscribeToWalletBalance(user.uid, setBalance);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToDiamondBalance(user.uid, setDiamonds);
   }, [user]);
 
   useEffect(() => {
@@ -64,6 +70,12 @@ export default function WalletScreen() {
           <Text style={styles.topUpLabel}>Top Up</Text>
         </TouchableOpacity>
       </LinearGradient>
+
+      <View style={styles.diamondRow}>
+        <Ionicons name="diamond" size={18} color={colors.cyan} />
+        <Text style={styles.diamondLabel}>Diamonds earned from gifts</Text>
+        <Text style={styles.diamondValue}>{diamonds.toLocaleString()}</Text>
+      </View>
 
       <Text style={styles.sectionTitle}>Transactions</Text>
       <FlatList
@@ -142,6 +154,27 @@ const styles = StyleSheet.create({
   topUpLabel: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: '700',
+  },
+  diamondRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceAlt,
+    gap: 8,
+  },
+  diamondLabel: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  diamondValue: {
+    color: colors.text,
+    fontSize: 15,
     fontWeight: '700',
   },
   sectionTitle: {

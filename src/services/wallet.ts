@@ -15,6 +15,14 @@ export function subscribeToWalletBalance(uid: string, onChange: (balance: number
   });
 }
 
+// Diamonds are what a creator earns from gifts — a separate balance from
+// the coins viewers spend, credited server-side by sendGift.
+export function subscribeToDiamondBalance(uid: string, onChange: (diamonds: number) => void) {
+  return onSnapshot(walletRef(uid), (snapshot) => {
+    onChange(snapshot.exists() ? ((snapshot.data().diamonds as number) ?? 0) : 0);
+  });
+}
+
 export function subscribeToWalletTransactions(uid: string, onChange: (items: WalletTransaction[]) => void) {
   const transactionsQuery = query(
     collection(db, 'wallets', uid, 'transactions'),
@@ -38,4 +46,9 @@ export const claimReward = httpsCallable<
 export const spendCoins = httpsCallable<{ item: 'live_gift' | 'video_boost' }, { balance: number }>(
   functions,
   'spendCoins'
+);
+
+export const sendGift = httpsCallable<{ videoId: string; toUid: string; fromUsername: string }, { balance: number }>(
+  functions,
+  'sendGift'
 );
