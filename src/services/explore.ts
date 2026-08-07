@@ -1,0 +1,98 @@
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import type { Post } from '../types/post';
+import type { UserProfile } from '../types/userProfile';
+
+function mapUserDoc(uid: string, data: Record<string, unknown>): UserProfile {
+  return {
+    uid,
+    username: data.username as string,
+    displayName: (data.displayName as string) ?? (data.username as string),
+    photoURL: (data.photoURL as string) ?? null,
+    bio: (data.bio as string) ?? '',
+    followingCount: (data.followingCount as number) ?? 0,
+    followersCount: (data.followersCount as number) ?? 0,
+    walletBalance: (data.walletBalance as number) ?? 0,
+  };
+}
+
+export async function searchUsersByUsername(term: string): Promise<UserProfile[]> {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) return [];
+
+  const usersQuery = query(
+    collection(db, 'users'),
+    orderBy('username'),
+    where('username', '>=', normalized),
+    where('username', '<=', normalized + ''),
+    limit(20)
+  );
+  const snapshot = await getDocs(usersQuery);
+  return snapshot.docs.map((docSnap) => mapUserDoc(docSnap.id, docSnap.data()));
+}
+
+export type TrendingHashtag = { tag: string; count: number };
+
+export async function getTrendingHashtags(): Promise<TrendingHashtag[]> {
+  const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+  const snapshot = await getDocs(postsQuery);
+
+  const counts = new Map<string, number>();
+  snapshot.docs.forEach((docSnap) => {
+    const caption = (docSnap.data().caption as string) ?? '';
+    const tags = caption.match(/#[a-zA-Z0-9_]+/g) ?? [];
+    tags.forEach((tag) => {
+      const key = tag.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+  });
+
+  return Array.from(counts.entries())
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+}
+
+export type PopularCreator = UserProfile & { totalLikes: number };
+
+export async function getPopularCreators(): Promise<PopularCreator[]> {
+  const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+  const postsSnapshot = await getDocs(postsQuery);
+
+  const likesByUid = new Map<string, number>();
+  postsSnapshot.docs.forEach((docSnap) => {
+    const data = docSnap.data() as { uid: string; likesCount?: number };
+    likesByUid.set(data.uid, (likesByUid.get(data.uid) ?? 0) + (data.likesCount ?? 0));
+  });
+
+  const topUids = Array.from(likesByUid.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  const creators = await Promise.all(
+    topUids.map(async ([uid, totalLikes]) => {
+      const snapshot = await getDoc(doc(db, 'users', uid));
+      if (!snapshot.exists()) return null;
+      return { ...mapUserDoc(uid, snapshot.data()), totalLikes };
+    })
+  );
+
+  return creators.filter((creator): creator is PopularCreator => creator !== null);
+}
+
+export async function getTopPost(): Promise<Post | null> {
+  const postsQuery = query(collection(db, 'posts'), orderBy('likesCount', 'desc'), limit(1));
+  const snapshot = await getDocs(postsQuery);
+  const docSnap = snapshot.docs[0];
+  if (!docSnap) return null;
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    uid: data.uid,
+    caption: data.caption ?? '',
+    videoUrl: data.videoUrl,
+    thumbnailUrl: data.thumbnailUrl,
+    likesCount: data.likesCount ?? 0,
+    createdAt: Date.now(),
+  };
+}

@@ -1,27 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { subscribeToUserPosts } from '../services/posts';
 import { useUserProfile } from '../hooks/useUserProfile';
 import type { Post } from '../types/post';
-import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 2;
 const GRID_COLUMNS = 3;
 const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
-type Route = { params: HomeStackParamList['UserProfile'] };
+type UserProfileParamList = { UserProfile: { uid: string } };
 
 export default function UserProfileScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
-  const { params } = useRoute<Route & { key: string; name: 'UserProfile' }>();
+  const navigation = useNavigation();
+  const { params } = useRoute<RouteProp<UserProfileParamList, 'UserProfile'>>();
   const profile = useUserProfile(params.uid);
   const [posts, setPosts] = useState<Post[]>([]);
 

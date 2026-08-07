@@ -5,13 +5,17 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import HomeStackNavigator from './HomeStackNavigator';
+import ExploreStackNavigator from './ExploreStackNavigator';
 import UploadScreen from '../screens/UploadScreen';
+import InboxScreen from '../screens/InboxScreen';
 import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
 
 export type MainTabParamList = {
   Home: undefined;
+  Explore: undefined;
   Upload: undefined;
+  Inbox: undefined;
   Profile: undefined;
 };
 
@@ -19,6 +23,8 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   Home: 'home',
+  Explore: 'search',
+  Inbox: 'chatbubble-ellipses',
   Profile: 'person',
 };
 
@@ -51,7 +57,7 @@ export default function MainTabNavigator() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="add" size={30} color={colors.text} />
+                  <Ionicons name="add" size={28} color={colors.text} />
                 </LinearGradient>
               </View>
             );
@@ -59,7 +65,7 @@ export default function MainTabNavigator() {
           return (
             <Ionicons
               name={TAB_ICONS[route.name]}
-              size={28}
+              size={25}
               color={focused ? colors.text : color}
             />
           );
@@ -67,7 +73,9 @@ export default function MainTabNavigator() {
       })}
     >
       <Tab.Screen name="Home" component={HomeStackNavigator} />
+      <Tab.Screen name="Explore" component={ExploreStackNavigator} />
       <Tab.Screen name="Upload" component={UploadScreen} />
+      <Tab.Screen name="Inbox" component={InboxScreen} />
       <Tab.Screen name="Profile" component={ProfileStackNavigator} />
     </Tab.Navigator>
   );
@@ -80,9 +88,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   centerButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.pink,

@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
+import { createLikeNotification } from './notifications';
 import type { Post } from '../types/post';
 
 const POSTS_COLLECTION = 'posts';
@@ -108,19 +109,37 @@ export function subscribeToLikeState(postId: string, uid: string, onChange: (lik
   return onSnapshot(likeRef, (snapshot) => onChange(snapshot.exists()));
 }
 
-export async function toggleLike(postId: string, uid: string) {
+export async function toggleLike(params: {
+  postId: string;
+  postOwnerUid: string;
+  postThumbnailUrl: string;
+  likerUid: string;
+  likerUsername: string;
+}) {
+  const { postId, postOwnerUid, postThumbnailUrl, likerUid, likerUsername } = params;
   const postRef = doc(db, POSTS_COLLECTION, postId);
-  const likeRef = doc(db, POSTS_COLLECTION, postId, 'likes', uid);
+  const likeRef = doc(db, POSTS_COLLECTION, postId, 'likes', likerUid);
 
-  await runTransaction(db, async (transaction) => {
+  const didLike = await runTransaction(db, async (transaction) => {
     const likeSnap = await transaction.get(likeRef);
     if (likeSnap.exists()) {
       transaction.delete(likeRef);
       transaction.update(postRef, { likesCount: increment(-1) });
-    } else {
-      transaction.set(likeRef, { createdAt: serverTimestamp() });
-      transaction.update(postRef, { likesCount: increment(1) });
+      return false;
     }
+    transaction.set(likeRef, { createdAt: serverTimestamp() });
+    transaction.update(postRef, { likesCount: increment(1) });
+    return true;
   });
+
+  if (didLike) {
+    await createLikeNotification({
+      toUid: postOwnerUid,
+      fromUid: likerUid,
+      fromUsername: likerUsername,
+      postId,
+      postThumbnailUrl,
+    }).catch(() => {});
+  }
 }
 

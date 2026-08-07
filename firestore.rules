@@ -22,6 +22,11 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.auth.uid == uid
         && request.resource.data.username == resource.data.username;
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null;
+      }
     }
   }
 }

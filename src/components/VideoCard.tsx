@@ -21,6 +21,7 @@ type Props = {
 export default function VideoCard({ post, isActive, height, onPressAuthor }: Props) {
   const { user } = useAuth();
   const author = useUserProfile(post.uid);
+  const viewerProfile = useUserProfile(user?.uid);
   const [liked, setLiked] = useState(false);
 
   const player = useVideoPlayer(post.videoUrl, (p) => {
@@ -43,8 +44,14 @@ export default function VideoCard({ post, isActive, height, onPressAuthor }: Pro
   }, [post.id, user]);
 
   const handleLike = () => {
-    if (!user) return;
-    toggleLike(post.id, user.uid).catch(() => {});
+    if (!user || !viewerProfile) return;
+    toggleLike({
+      postId: post.id,
+      postOwnerUid: post.uid,
+      postThumbnailUrl: post.thumbnailUrl,
+      likerUid: user.uid,
+      likerUsername: viewerProfile.username,
+    }).catch(() => {});
   };
 
   const handleShare = () => {

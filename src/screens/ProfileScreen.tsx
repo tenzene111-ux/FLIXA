@@ -20,7 +20,7 @@ const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const profile = useUserProfile(user?.uid);
   const displayName = profile?.displayName ?? '...';
   const username = profile?.username ?? '...';
@@ -43,8 +43,8 @@ export default function ProfileScreen() {
         <Text style={styles.headerName} numberOfLines={1}>
           @{username}
         </Text>
-        <TouchableOpacity style={styles.headerAction} onPress={signOut}>
-          <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
+        <TouchableOpacity style={styles.headerAction} onPress={() => navigation.navigate('Menu')}>
+          <Ionicons name="menu-outline" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
