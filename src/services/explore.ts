@@ -3,15 +3,23 @@ import { db } from '../firebase/config';
 import type { Post } from '../types/post';
 import type { UserProfile } from '../types/userProfile';
 
+// The users collection is shared with another app on this Firebase project,
+// which writes accounts with a different field set (handle/avatarUrl/
+// followerCount instead of username/photoURL/followersCount). Normalize
+// either shape so a cross-app account never renders with an undefined
+// username.
 function mapUserDoc(uid: string, data: Record<string, unknown>): UserProfile {
+  const username = ((data.username as string | undefined) ??
+    (data.handle as string | undefined)?.replace(/^@/, '') ??
+    'user') as string;
   return {
     uid,
-    username: data.username as string,
-    displayName: (data.displayName as string) ?? (data.username as string),
-    photoURL: (data.photoURL as string) ?? null,
+    username,
+    displayName: (data.displayName as string) ?? username,
+    photoURL: (data.photoURL as string) ?? (data.avatarUrl as string) ?? null,
     bio: (data.bio as string) ?? '',
     followingCount: (data.followingCount as number) ?? 0,
-    followersCount: (data.followersCount as number) ?? 0,
+    followersCount: (data.followersCount as number) ?? (data.followerCount as number) ?? 0,
   };
 }
 

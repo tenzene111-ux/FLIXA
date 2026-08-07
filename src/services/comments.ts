@@ -16,7 +16,9 @@ export function subscribeToComments(postId: string, onChange: (comments: Comment
         return {
           id: docSnap.id,
           uid: data.uid,
-          username: data.username,
+          // Comments from the other app on this shared project don't
+          // always carry a username field — fall back rather than crash.
+          username: data.username ?? 'user',
           text: data.text,
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
         };

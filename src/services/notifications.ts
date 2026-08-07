@@ -63,11 +63,16 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
     onChange(
       snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
+        // Notifications are shared with another app on this Firebase
+        // project, which writes a different shape (fromName/message
+        // instead of fromUsername, plus a 'system' type this app doesn't
+        // render) — normalize rather than let an unrecognized doc crash.
+        const knownTypes: Notification['type'][] = ['like', 'comment', 'follow'];
         return {
           id: docSnap.id,
-          type: data.type ?? 'like',
+          type: knownTypes.includes(data.type) ? data.type : 'like',
           fromUid: data.fromUid,
-          fromUsername: data.fromUsername,
+          fromUsername: data.fromUsername ?? data.fromName ?? 'user',
           postId: data.postId,
           postThumbnailUrl: data.postThumbnailUrl,
           commentText: data.commentText,
