@@ -25,6 +25,38 @@ export async function createLikeNotification(params: {
   });
 }
 
+export async function createCommentNotification(params: {
+  toUid: string;
+  fromUid: string;
+  fromUsername: string;
+  postId: string;
+  postThumbnailUrl: string;
+  commentText: string;
+}) {
+  if (params.toUid === params.fromUid) return;
+  await addDoc(notificationsRef(params.toUid), {
+    type: 'comment',
+    fromUid: params.fromUid,
+    fromUsername: params.fromUsername,
+    postId: params.postId,
+    postThumbnailUrl: params.postThumbnailUrl,
+    commentText: params.commentText,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function createFollowNotification(params: { toUid: string; fromUid: string; fromUsername: string }) {
+  if (params.toUid === params.fromUid) return;
+  await addDoc(notificationsRef(params.toUid), {
+    type: 'follow',
+    fromUid: params.fromUid,
+    fromUsername: params.fromUsername,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
 export function subscribeToNotifications(uid: string, onChange: (notifications: Notification[]) => void) {
   const notificationsQuery = query(notificationsRef(uid), orderBy('createdAt', 'desc'));
   return onSnapshot(notificationsQuery, (snapshot) => {
@@ -33,11 +65,12 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
         const data = docSnap.data();
         return {
           id: docSnap.id,
-          type: 'like',
+          type: data.type ?? 'like',
           fromUid: data.fromUid,
           fromUsername: data.fromUsername,
           postId: data.postId,
           postThumbnailUrl: data.postThumbnailUrl,
+          commentText: data.commentText,
           read: data.read ?? false,
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
         };

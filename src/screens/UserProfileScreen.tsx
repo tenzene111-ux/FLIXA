@@ -7,6 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { subscribeToUserPosts } from '../services/posts';
 import { useUserProfile } from '../hooks/useUserProfile';
+import { useAuth } from '../context/AuthContext';
+import { followUser, subscribeToFollowState, unfollowUser } from '../services/follows';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
@@ -21,15 +23,39 @@ export default function UserProfileScreen() {
   const navigation = useNavigation();
   const { params } = useRoute<RouteProp<UserProfileParamList, 'UserProfile'>>();
   const profile = useUserProfile(params.uid);
+  const { user } = useAuth();
+  const viewerProfile = useUserProfile(user?.uid);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   useEffect(() => {
     return subscribeToUserPosts(params.uid, setPosts, () => {});
   }, [params.uid]);
 
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToFollowState(user.uid, params.uid, setIsFollowing);
+  }, [user, params.uid]);
+
   const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
   const displayName = profile?.displayName ?? '...';
   const username = profile?.username ?? '...';
+  const isOwnProfile = user?.uid === params.uid;
+
+  const handleToggleFollow = async () => {
+    if (!user || !viewerProfile || followBusy) return;
+    setFollowBusy(true);
+    try {
+      if (isFollowing) {
+        await unfollowUser({ followerUid: user.uid, followingUid: params.uid });
+      } else {
+        await followUser({ followerUid: user.uid, followerUsername: viewerProfile.username, followingUid: params.uid });
+      }
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -73,6 +99,19 @@ export default function UserProfileScreen() {
                 <Stat label="Followers" value={formatCount(profile?.followersCount ?? 0)} />
                 <Stat label="Likes" value={formatCount(totalLikes)} />
               </View>
+
+              {!isOwnProfile && (
+                <TouchableOpacity
+                  style={[styles.followButton, isFollowing && styles.followingButton]}
+                  onPress={handleToggleFollow}
+                  disabled={followBusy}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.followButtonLabel, isFollowing && styles.followingButtonLabel]}>
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
             </View>
@@ -200,6 +239,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 16,
     textAlign: 'center',
+  },
+  followButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    paddingVertical: 9,
+    paddingHorizontal: 36,
+    marginTop: 18,
+  },
+  followingButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followButtonLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  followingButtonLabel: {
+    color: colors.textMuted,
   },
   statValue: {
     color: colors.text,

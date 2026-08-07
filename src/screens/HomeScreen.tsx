@@ -16,7 +16,9 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import colors from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
 import { subscribeToFeed } from '../services/posts';
+import { subscribeToFollowingUids } from '../services/follows';
 import type { Post } from '../types/post';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
@@ -28,8 +30,10 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
   const tabBarHeight = useBottomTabBarHeight();
   const itemHeight = windowHeight - tabBarHeight;
+  const { user } = useAuth();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [posts, setPosts] = useState<Post[]>([]);
+  const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -43,6 +47,13 @@ export default function HomeScreen() {
     );
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToFollowingUids(user.uid, setFollowingUids);
+  }, [user]);
+
+  const visiblePosts = activeFeed === 'following' ? posts.filter((post) => followingUids.has(post.uid)) : posts;
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0) {
@@ -59,6 +70,9 @@ export default function HomeScreen() {
         isActive={isFocused && item.id === activeId}
         height={itemHeight}
         onPressAuthor={() => navigation.navigate('UserProfile', { uid: item.uid })}
+        onPressComments={() =>
+          navigation.navigate('Comments', { postId: item.id, postOwnerUid: item.uid, postThumbnailUrl: item.thumbnailUrl })
+        }
       />
     ),
     [activeId, isFocused, navigation, itemHeight]
@@ -70,15 +84,19 @@ export default function HomeScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      ) : posts.length === 0 ? (
+      ) : visiblePosts.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="videocam-outline" size={48} color={colors.textDim} />
-          <Text style={styles.emptyTitle}>No videos yet</Text>
-          <Text style={styles.emptySubtitle}>Be the first to post on Flixa</Text>
+          <Text style={styles.emptyTitle}>
+            {activeFeed === 'following' ? 'No videos from people you follow' : 'No videos yet'}
+          </Text>
+          <Text style={styles.emptySubtitle}>
+            {activeFeed === 'following' ? 'Follow creators to see their videos here' : 'Be the first to post on Flixa'}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={posts}
+          data={visiblePosts}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           pagingEnabled

@@ -16,9 +16,10 @@ type Props = {
   isActive: boolean;
   height: number;
   onPressAuthor: () => void;
+  onPressComments: () => void;
 };
 
-export default function VideoCard({ post, isActive, height, onPressAuthor }: Props) {
+export default function VideoCard({ post, isActive, height, onPressAuthor, onPressComments }: Props) {
   const { user } = useAuth();
   const author = useUserProfile(post.uid);
   const viewerProfile = useUserProfile(user?.uid);
@@ -103,10 +104,10 @@ export default function VideoCard({ post, isActive, height, onPressAuthor }: Pro
           <Text style={styles.actionLabel}>{post.likesCount}</Text>
         </Pressable>
 
-        <View style={styles.actionItem}>
+        <Pressable onPress={onPressComments} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="chatbubble-ellipses" size={30} color={colors.text} />
-          <Text style={styles.actionLabel}>0</Text>
-        </View>
+          <Text style={styles.actionLabel}>{post.commentsCount}</Text>
+        </Pressable>
 
         <Pressable onPress={handleShare} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="arrow-redo" size={30} color={colors.text} />

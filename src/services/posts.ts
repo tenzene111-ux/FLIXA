@@ -31,6 +31,7 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
       videoUrl: data.videoUrl,
       thumbnailUrl: data.thumbnailUrl,
       likesCount: data.likesCount ?? 0,
+      commentsCount: data.commentsCount ?? 0,
       createdAt,
     };
   });
@@ -100,6 +101,7 @@ export async function createPost(params: {
     videoUrl,
     thumbnailUrl,
     likesCount: 0,
+    commentsCount: 0,
     createdAt: serverTimestamp(),
   });
 }

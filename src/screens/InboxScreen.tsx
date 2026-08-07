@@ -17,6 +17,29 @@ function timeAgo(timestamp: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+const NOTIFICATION_ICON: Record<Notification['type'], keyof typeof Ionicons.glyphMap> = {
+  like: 'heart',
+  comment: 'chatbubble-ellipses',
+  follow: 'person-add',
+};
+
+const NOTIFICATION_ICON_COLOR: Record<Notification['type'], string> = {
+  like: colors.pink,
+  comment: colors.cyan,
+  follow: colors.primary,
+};
+
+function notificationText(notification: Notification): string {
+  switch (notification.type) {
+    case 'like':
+      return 'liked your video';
+    case 'comment':
+      return `commented: ${notification.commentText}`;
+    case 'follow':
+      return 'started following you';
+  }
+}
+
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -44,7 +67,7 @@ export default function InboxScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="heart-outline" size={40} color={colors.textDim} />
             <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptySubtitle}>Likes on your videos will show up here</Text>
+            <Text style={styles.emptySubtitle}>Likes, comments, and new followers show up here</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -54,13 +77,13 @@ export default function InboxScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.rowIcon}>
-              <Ionicons name="heart" size={16} color={colors.pink} />
+              <Ionicons name={NOTIFICATION_ICON[item.type]} size={16} color={NOTIFICATION_ICON_COLOR[item.type]} />
             </View>
-            <Text style={styles.rowText}>
-              <Text style={styles.rowUsername}>@{item.fromUsername}</Text> liked your video
+            <Text style={styles.rowText} numberOfLines={2}>
+              <Text style={styles.rowUsername}>@{item.fromUsername}</Text> {notificationText(item)}
             </Text>
             <Text style={styles.rowTime}>{timeAgo(item.createdAt)}</Text>
-            <Image source={{ uri: item.postThumbnailUrl }} style={styles.rowThumb} />
+            {item.postThumbnailUrl ? <Image source={{ uri: item.postThumbnailUrl }} style={styles.rowThumb} /> : null}
           </TouchableOpacity>
         )}
       />

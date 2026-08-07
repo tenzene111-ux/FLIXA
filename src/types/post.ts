@@ -5,5 +5,6 @@ export type Post = {
   videoUrl: string;
   thumbnailUrl: string;
   likesCount: number;
+  commentsCount: number;
   createdAt: number;
 };

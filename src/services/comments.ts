@@ -1,0 +1,54 @@
+import { collection, doc, increment, onSnapshot, orderBy, query, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { createCommentNotification } from './notifications';
+import type { Comment } from '../types/comment';
+
+function commentsRef(postId: string) {
+  return collection(db, 'posts', postId, 'comments');
+}
+
+export function subscribeToComments(postId: string, onChange: (comments: Comment[]) => void) {
+  const commentsQuery = query(commentsRef(postId), orderBy('createdAt', 'asc'));
+  return onSnapshot(commentsQuery, (snapshot) => {
+    onChange(
+      snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          uid: data.uid,
+          username: data.username,
+          text: data.text,
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+        };
+      })
+    );
+  });
+}
+
+export async function addComment(params: {
+  postId: string;
+  postOwnerUid: string;
+  postThumbnailUrl: string;
+  uid: string;
+  username: string;
+  text: string;
+}) {
+  const { postId, postOwnerUid, postThumbnailUrl, uid, username, text } = params;
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const batch = writeBatch(db);
+  const newCommentRef = doc(commentsRef(postId));
+  batch.set(newCommentRef, { uid, username, text: trimmed, createdAt: serverTimestamp() });
+  batch.update(doc(db, 'posts', postId), { commentsCount: increment(1) });
+  await batch.commit();
+
+  await createCommentNotification({
+    toUid: postOwnerUid,
+    fromUid: uid,
+    fromUsername: username,
+    postId,
+    postThumbnailUrl,
+    commentText: trimmed,
+  }).catch(() => {});
+}

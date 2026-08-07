@@ -93,6 +93,7 @@ export async function getTopPost(): Promise<Post | null> {
     videoUrl: data.videoUrl,
     thumbnailUrl: data.thumbnailUrl,
     likesCount: data.likesCount ?? 0,
+    commentsCount: data.commentsCount ?? 0,
     createdAt: Date.now(),
   };
 }

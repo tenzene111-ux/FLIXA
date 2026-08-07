@@ -1,10 +1,11 @@
 export type Notification = {
   id: string;
-  type: 'like';
+  type: 'like' | 'comment' | 'follow';
   fromUid: string;
   fromUsername: string;
-  postId: string;
-  postThumbnailUrl: string;
+  postId?: string;
+  postThumbnailUrl?: string;
+  commentText?: string;
   read: boolean;
   createdAt: number;
 };
