@@ -55,11 +55,16 @@ export function subscribeToUserPosts(
   return onSnapshot(userPostsQuery, (snapshot) => onChange(mapSnapshotToPosts(snapshot)), onError);
 }
 
-async function uploadFile(localUri: string, storagePath: string, onProgress?: (pct: number) => void) {
+async function uploadFile(
+  localUri: string,
+  storagePath: string,
+  contentType: string,
+  onProgress?: (pct: number) => void
+) {
   const response = await fetch(localUri);
   const blob = await response.blob();
   const storageRef = ref(storage, storagePath);
-  const uploadTask = uploadBytesResumable(storageRef, blob);
+  const uploadTask = uploadBytesResumable(storageRef, blob, { contentType });
 
   await new Promise<void>((resolve, reject) => {
     uploadTask.on(
@@ -87,11 +92,13 @@ export async function createPost(params: {
   const videoUrl = await uploadFile(
     params.videoUri,
     `videos/${params.uid}/${timestamp}.mp4`,
+    'video/mp4',
     (pct) => params.onProgress?.(pct * 0.85)
   );
   const thumbnailUrl = await uploadFile(
     params.thumbnailUri,
     `thumbnails/${params.uid}/${timestamp}.jpg`,
+    'image/jpeg',
     (pct) => params.onProgress?.(0.85 + pct * 0.15)
   );
 

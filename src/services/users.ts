@@ -50,6 +50,6 @@ export async function uploadAvatar(uid: string, localUri: string): Promise<strin
   const response = await fetch(localUri);
   const blob = await response.blob();
   const avatarRef = ref(storage, `avatars/${uid}.jpg`);
-  await uploadBytes(avatarRef, blob);
+  await uploadBytes(avatarRef, blob, { contentType: 'image/jpeg' });
   return getDownloadURL(avatarRef);
 }
