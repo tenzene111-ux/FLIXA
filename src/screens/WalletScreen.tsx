@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -7,14 +7,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { useUserProfile } from '../hooks/useUserProfile';
+import { subscribeToWalletBalance, subscribeToWalletTransactions } from '../services/wallet';
+import type { WalletTransaction } from '../types/wallet';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
+
+const TRANSACTION_ICONS: Record<WalletTransaction['type'], keyof typeof Ionicons.glyphMap> = {
+  topup: 'add-circle-outline',
+  gift: 'gift-outline',
+  reward: 'trophy-outline',
+  refund: 'return-up-back-outline',
+};
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const { user } = useAuth();
-  const profile = useUserProfile(user?.uid);
+  const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToWalletBalance(user.uid, setBalance);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToWalletTransactions(user.uid, setTransactions);
+  }, [user]);
 
   const handleTopUp = () => {
     Alert.alert('Top Up', "Real payments aren't set up yet — this is a placeholder for now.");
@@ -39,7 +58,7 @@ export default function WalletScreen() {
         <Text style={styles.balanceLabel}>Balance</Text>
         <View style={styles.balanceRow}>
           <Ionicons name="logo-bitcoin" size={26} color={colors.text} />
-          <Text style={styles.balanceValue}>{(profile?.walletBalance ?? 0).toLocaleString()}</Text>
+          <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
         </View>
         <TouchableOpacity style={styles.topUpButton} onPress={handleTopUp} activeOpacity={0.85}>
           <Text style={styles.topUpLabel}>Top Up</Text>
@@ -48,8 +67,8 @@ export default function WalletScreen() {
 
       <Text style={styles.sectionTitle}>Transactions</Text>
       <FlatList
-        data={[]}
-        keyExtractor={(_, index) => String(index)}
+        data={transactions}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -57,7 +76,16 @@ export default function WalletScreen() {
             <Text style={styles.emptyTitle}>No transactions yet</Text>
           </View>
         }
-        renderItem={() => null}
+        renderItem={({ item }) => (
+          <View style={styles.transactionRow}>
+            <Ionicons name={TRANSACTION_ICONS[item.type]} size={22} color={colors.text} style={styles.transactionIcon} />
+            <Text style={styles.transactionLabel}>{item.label}</Text>
+            <Text style={[styles.transactionAmount, item.amount < 0 ? styles.amountNegative : styles.amountPositive]}>
+              {item.amount > 0 ? '+' : ''}
+              {item.amount.toLocaleString()}
+            </Text>
+          </View>
+        )}
       />
     </View>
   );
@@ -137,5 +165,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginTop: 4,
+  },
+  transactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 12,
+  },
+  transactionIcon: {
+    width: 22,
+  },
+  transactionLabel: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  transactionAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  amountPositive: {
+    color: colors.primary,
+  },
+  amountNegative: {
+    color: colors.danger,
   },
 });

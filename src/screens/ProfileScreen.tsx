@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Image, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { subscribeToUserPosts } from '../services/posts';
+import { getPostsByIds, subscribeToUserPosts } from '../services/posts';
+import { subscribeSavedVideoIds } from '../services/savedVideos';
 import type { Post } from '../types/post';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
+
+type GridTab = 'posts' | 'saved' | 'tagged';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 2;
@@ -20,18 +23,32 @@ const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
+  const route = useRoute<RouteProp<ProfileStackParamList, 'MyProfile'>>();
   const { user } = useAuth();
   const profile = useUserProfile(user?.uid);
   const displayName = profile?.displayName ?? '...';
   const username = profile?.username ?? '...';
   const [posts, setPosts] = useState<Post[]>([]);
+  const [gridTab, setGridTab] = useState<GridTab>(route.params?.initialTab ?? 'posts');
+  const [savedVideoIds, setSavedVideoIds] = useState<string[]>([]);
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
 
   useEffect(() => {
     if (!user) return;
     return subscribeToUserPosts(user.uid, setPosts, () => {});
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    return subscribeSavedVideoIds(user.uid, setSavedVideoIds);
+  }, [user]);
+
+  useEffect(() => {
+    getPostsByIds(savedVideoIds).then(setSavedPosts).catch(() => {});
+  }, [savedVideoIds]);
+
   const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
+  const gridVideos = gridTab === 'posts' ? posts : gridTab === 'saved' ? savedPosts : [];
 
   const handleShare = () => {
     Share.share({ message: `Check out @${username} on Flixa!` }).catch(() => {});
@@ -49,7 +66,7 @@ export default function ProfileScreen() {
       </View>
 
       <FlatList
-        data={posts}
+        data={gridVideos}
         keyExtractor={(item) => item.id}
         numColumns={GRID_COLUMNS}
         columnWrapperStyle={styles.gridRow}
@@ -90,7 +107,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={handleShare}>
                   <Ionicons name="share-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton}>
+                <TouchableOpacity style={styles.iconButton} onPress={() => setGridTab('saved')}>
                   <Ionicons name="bookmark-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
               </View>
@@ -99,23 +116,36 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.gridHeader}>
-              <View style={[styles.gridTab, styles.gridTabActive]}>
-                <Ionicons name="grid-outline" size={18} color={colors.text} />
-              </View>
-              <View style={styles.gridTab}>
-                <Ionicons name="bookmark-outline" size={18} color={colors.textDim} />
-              </View>
-              <View style={styles.gridTab}>
-                <Ionicons name="pricetag-outline" size={18} color={colors.textDim} />
-              </View>
+              <TouchableOpacity
+                style={[styles.gridTab, gridTab === 'posts' && styles.gridTabActive]}
+                onPress={() => setGridTab('posts')}
+              >
+                <Ionicons name="grid-outline" size={18} color={gridTab === 'posts' ? colors.text : colors.textDim} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.gridTab, gridTab === 'saved' && styles.gridTabActive]}
+                onPress={() => setGridTab('saved')}
+              >
+                <Ionicons name="bookmark-outline" size={18} color={gridTab === 'saved' ? colors.text : colors.textDim} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.gridTab, gridTab === 'tagged' && styles.gridTabActive]}
+                onPress={() => setGridTab('tagged')}
+              >
+                <Ionicons name="pricetag-outline" size={18} color={gridTab === 'tagged' ? colors.text : colors.textDim} />
+              </TouchableOpacity>
             </View>
           </>
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="videocam-outline" size={40} color={colors.textDim} />
-            <Text style={styles.emptyTitle}>No videos yet</Text>
-            <Text style={styles.emptySubtitle}>Tap the + button to post your first video</Text>
+            <Text style={styles.emptyTitle}>
+              {gridTab === 'posts' ? 'No videos yet' : gridTab === 'saved' ? 'No saved videos yet' : 'No tagged videos yet'}
+            </Text>
+            {gridTab === 'posts' ? (
+              <Text style={styles.emptySubtitle}>Tap the + button to post your first video</Text>
+            ) : null}
           </View>
         }
         renderItem={({ item }) => (

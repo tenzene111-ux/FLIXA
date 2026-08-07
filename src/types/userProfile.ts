@@ -6,5 +6,4 @@ export type UserProfile = {
   bio: string;
   followingCount: number;
   followersCount: number;
-  walletBalance: number;
 };

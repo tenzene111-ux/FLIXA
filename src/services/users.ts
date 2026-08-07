@@ -14,7 +14,6 @@ function mapDocToProfile(uid: string, data: DocumentData): UserProfile {
     bio: data.bio ?? '',
     followingCount: data.followingCount ?? 0,
     followersCount: data.followersCount ?? 0,
-    walletBalance: data.walletBalance ?? 0,
   };
 }
 
@@ -22,6 +21,8 @@ export async function ensureUserProfile(uid: string, username: string): Promise<
   const profileRef = doc(db, USERS_COLLECTION, uid);
   const existing = await getDoc(profileRef);
   if (existing.exists()) return;
+  // Creating this doc also triggers initWalletOnUserCreate server-side
+  // (see functions/src/index.ts), which sets up wallets/{uid}.
   await setDoc(profileRef, {
     username,
     displayName: username,
@@ -29,7 +30,6 @@ export async function ensureUserProfile(uid: string, username: string): Promise<
     bio: '',
     followingCount: 0,
     followersCount: 0,
-    walletBalance: 0,
   });
 }
 

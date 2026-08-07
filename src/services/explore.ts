@@ -12,7 +12,6 @@ function mapUserDoc(uid: string, data: Record<string, unknown>): UserProfile {
     bio: (data.bio as string) ?? '',
     followingCount: (data.followingCount as number) ?? 0,
     followersCount: (data.followersCount as number) ?? 0,
-    walletBalance: (data.walletBalance as number) ?? 0,
   };
 }
 
@@ -34,7 +33,7 @@ export async function searchUsersByUsername(term: string): Promise<UserProfile[]
 export type TrendingHashtag = { tag: string; count: number };
 
 export async function getTrendingHashtags(): Promise<TrendingHashtag[]> {
-  const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+  const postsQuery = query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(100));
   const snapshot = await getDocs(postsQuery);
 
   const counts = new Map<string, number>();
@@ -56,13 +55,13 @@ export async function getTrendingHashtags(): Promise<TrendingHashtag[]> {
 export type PopularCreator = UserProfile & { totalLikes: number };
 
 export async function getPopularCreators(): Promise<PopularCreator[]> {
-  const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+  const postsQuery = query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(100));
   const postsSnapshot = await getDocs(postsQuery);
 
   const likesByUid = new Map<string, number>();
   postsSnapshot.docs.forEach((docSnap) => {
-    const data = docSnap.data() as { uid: string; likesCount?: number };
-    likesByUid.set(data.uid, (likesByUid.get(data.uid) ?? 0) + (data.likesCount ?? 0));
+    const data = docSnap.data() as { uploaderId: string; likeCount?: number };
+    likesByUid.set(data.uploaderId, (likesByUid.get(data.uploaderId) ?? 0) + (data.likeCount ?? 0));
   });
 
   const topUids = Array.from(likesByUid.entries())
@@ -81,19 +80,19 @@ export async function getPopularCreators(): Promise<PopularCreator[]> {
 }
 
 export async function getTopPost(): Promise<Post | null> {
-  const postsQuery = query(collection(db, 'posts'), orderBy('likesCount', 'desc'), limit(1));
+  const postsQuery = query(collection(db, 'videos'), orderBy('likeCount', 'desc'), limit(1));
   const snapshot = await getDocs(postsQuery);
   const docSnap = snapshot.docs[0];
   if (!docSnap) return null;
   const data = docSnap.data();
   return {
     id: docSnap.id,
-    uid: data.uid,
+    uid: data.uploaderId,
     caption: data.caption ?? '',
     videoUrl: data.videoUrl,
     thumbnailUrl: data.thumbnailUrl,
-    likesCount: data.likesCount ?? 0,
-    commentsCount: data.commentsCount ?? 0,
+    likesCount: data.likeCount ?? 0,
+    commentsCount: data.commentCount ?? 0,
     createdAt: Date.now(),
   };
 }

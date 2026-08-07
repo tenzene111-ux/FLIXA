@@ -1,15 +1,18 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   DocumentData,
-  increment,
+  documentId,
+  getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   QuerySnapshot,
-  runTransaction,
   serverTimestamp,
+  setDoc,
   Timestamp,
   where,
 } from 'firebase/firestore';
@@ -18,7 +21,7 @@ import { db, storage } from '../firebase/config';
 import { createLikeNotification } from './notifications';
 import type { Post } from '../types/post';
 
-const POSTS_COLLECTION = 'posts';
+const VIDEOS_COLLECTION = 'videos';
 
 function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
   return snapshot.docs.map((docSnap) => {
@@ -26,19 +29,19 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
     const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
     return {
       id: docSnap.id,
-      uid: data.uid,
+      uid: data.uploaderId,
       caption: data.caption ?? '',
       videoUrl: data.videoUrl,
       thumbnailUrl: data.thumbnailUrl,
-      likesCount: data.likesCount ?? 0,
-      commentsCount: data.commentsCount ?? 0,
+      likesCount: data.likeCount ?? 0,
+      commentsCount: data.commentCount ?? 0,
       createdAt,
     };
   });
 }
 
 export function subscribeToFeed(onChange: (posts: Post[]) => void, onError: (error: Error) => void) {
-  const feedQuery = query(collection(db, POSTS_COLLECTION), orderBy('createdAt', 'desc'));
+  const feedQuery = query(collection(db, VIDEOS_COLLECTION), orderBy('createdAt', 'desc'));
   return onSnapshot(feedQuery, (snapshot) => onChange(mapSnapshotToPosts(snapshot)), onError);
 }
 
@@ -48,11 +51,25 @@ export function subscribeToUserPosts(
   onError: (error: Error) => void
 ) {
   const userPostsQuery = query(
-    collection(db, POSTS_COLLECTION),
-    where('uid', '==', uid),
+    collection(db, VIDEOS_COLLECTION),
+    where('uploaderId', '==', uid),
     orderBy('createdAt', 'desc')
   );
   return onSnapshot(userPostsQuery, (snapshot) => onChange(mapSnapshotToPosts(snapshot)), onError);
+}
+
+export async function getPostsByIds(ids: string[]): Promise<Post[]> {
+  if (ids.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 10) {
+    chunks.push(ids.slice(i, i + 10));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(collection(db, VIDEOS_COLLECTION), where(documentId(), 'in', chunk)))
+    )
+  );
+  return results.flatMap((snapshot) => mapSnapshotToPosts(snapshot));
 }
 
 async function uploadFile(
@@ -102,19 +119,20 @@ export async function createPost(params: {
     (pct) => params.onProgress?.(0.85 + pct * 0.15)
   );
 
-  await addDoc(collection(db, POSTS_COLLECTION), {
-    uid: params.uid,
+  await addDoc(collection(db, VIDEOS_COLLECTION), {
+    uploaderId: params.uid,
     caption: params.caption,
     videoUrl,
     thumbnailUrl,
-    likesCount: 0,
-    commentsCount: 0,
+    likeCount: 0,
+    commentCount: 0,
+    shareCount: 0,
     createdAt: serverTimestamp(),
   });
 }
 
 export function subscribeToLikeState(postId: string, uid: string, onChange: (liked: boolean) => void) {
-  const likeRef = doc(db, POSTS_COLLECTION, postId, 'likes', uid);
+  const likeRef = doc(db, VIDEOS_COLLECTION, postId, 'likes', uid);
   return onSnapshot(likeRef, (snapshot) => onChange(snapshot.exists()));
 }
 
@@ -126,22 +144,16 @@ export async function toggleLike(params: {
   likerUsername: string;
 }) {
   const { postId, postOwnerUid, postThumbnailUrl, likerUid, likerUsername } = params;
-  const postRef = doc(db, POSTS_COLLECTION, postId);
-  const likeRef = doc(db, POSTS_COLLECTION, postId, 'likes', likerUid);
+  const likeRef = doc(db, VIDEOS_COLLECTION, postId, 'likes', likerUid);
 
-  const didLike = await runTransaction(db, async (transaction) => {
-    const likeSnap = await transaction.get(likeRef);
-    if (likeSnap.exists()) {
-      transaction.delete(likeRef);
-      transaction.update(postRef, { likesCount: increment(-1) });
-      return false;
-    }
-    transaction.set(likeRef, { createdAt: serverTimestamp() });
-    transaction.update(postRef, { likesCount: increment(1) });
-    return true;
-  });
+  // likeCount itself is updated server-side by the onLikeCreate/onLikeDelete
+  // Cloud Function triggers (see functions/src/index.ts) — the client only
+  // ever creates or deletes its own like doc.
+  const likeSnap = await getDoc(likeRef);
+  const didLike = !likeSnap.exists();
 
   if (didLike) {
+    await setDoc(likeRef, { createdAt: serverTimestamp() });
     await createLikeNotification({
       toUid: postOwnerUid,
       fromUid: likerUid,
@@ -149,6 +161,7 @@ export async function toggleLike(params: {
       postId,
       postThumbnailUrl,
     }).catch(() => {});
+  } else {
+    await deleteDoc(likeRef);
   }
 }
-

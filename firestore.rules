@@ -9,28 +9,33 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // ---- This app's video posts ----
-    match /posts/{postId} {
-      allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+    // ---- Video posts (likeCount/commentCount are server-authoritative,
+    // updated by Cloud Function triggers in functions/src/index.ts —
+    // clients may only bump shareCount directly) ----
+    match /videos/{videoId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uploaderId == request.auth.uid;
+      allow delete: if isOwner(resource.data.uploaderId);
       allow update: if isSignedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'commentsCount']);
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount']);
 
-      match /likes/{userId} {
-        allow read: if true;
-        allow write: if isOwner(userId);
+      match /likes/{uid} {
+        allow read: if isSignedIn();
+        allow create, delete: if isOwner(uid);
+        allow update: if false;
       }
 
       match /comments/{commentId} {
-        allow read: if true;
+        allow read: if isSignedIn();
         allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+        allow delete: if isOwner(resource.data.uid);
+        allow update: if false;
       }
     }
 
-    // ---- Shared user profiles (both apps read/write this collection) ----
+    // ---- Shared user profiles ----
     match /users/{uid} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow create: if isOwner(uid);
       allow update: if isOwner(uid)
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followersCount']);
@@ -41,12 +46,12 @@ service cloud.firestore {
       }
 
       match /following/{followingUid} {
-        allow read: if true;
+        allow read: if isSignedIn();
         allow write: if isOwner(uid);
       }
 
       match /followers/{followerUid} {
-        allow read: if true;
+        allow read: if isSignedIn();
         allow write: if isOwner(followerUid);
       }
 
@@ -59,7 +64,7 @@ service cloud.firestore {
       }
     }
 
-    // ---- This app's messaging ----
+    // ---- Messaging ----
     match /conversations/{conversationId} {
       allow read, update: if isSignedIn() && request.auth.uid in resource.data.participants;
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.participants;
@@ -83,7 +88,8 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // ---- Other app's wallet (server/Cloud Functions only) ----
+    // ---- Wallet (server-authoritative — every credit/debit runs through a
+    // Cloud Function callable via the Admin SDK; clients may only read) ----
     match /wallets/{uid} {
       allow read: if isOwner(uid);
       allow write: if false;
@@ -94,7 +100,7 @@ service cloud.firestore {
       }
     }
 
-    // ---- Other app's live streaming ----
+    // ---- Live streaming (not yet built client-side; collection reserved) ----
     match /liveStreams/{streamId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -106,28 +112,7 @@ service cloud.firestore {
       }
     }
 
-    // ---- Other app's videos collection (separate from this app's posts) ----
-    match /videos/{videoId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uploaderId == request.auth.uid;
-      allow delete: if isOwner(resource.data.uploaderId);
-      allow update: if isSignedIn() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount']);
-
-      match /likes/{uid} {
-        allow read: if isSignedIn();
-        allow create, delete: if isOwner(uid);
-        allow update: if false;
-      }
-
-      match /comments/{commentId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-        allow delete: if isOwner(resource.data.uid);
-        allow update: if false;
-      }
-    }
-
+    // ---- Curated explore content (admin/seed-managed) ----
     match /exploreHashtags/{hashtagId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -135,8 +120,8 @@ service cloud.firestore {
 
     match /exploreCreators/{creatorId} {
       allow read: if isSignedIn();
-      allow update: if isSignedIn() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount']);
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount']);
       allow create, delete: if false;
 
       match /followers/{followerId} {

@@ -9,6 +9,7 @@ import { useUserProfile } from '../hooks/useUserProfile';
 import { subscribeToLikeState, toggleLike } from '../services/posts';
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
+import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
@@ -28,6 +29,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const author = useUserProfile(post.uid);
   const viewerProfile = useUserProfile(user?.uid);
   const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
@@ -62,6 +64,11 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   }, [post.id, user]);
 
   useEffect(() => {
+    if (!user) return;
+    return subscribeIsSaved(user.uid, post.id, setSaved);
+  }, [post.id, user]);
+
+  useEffect(() => {
     if (isPlaying) {
       discAnimationRef.current = Animated.loop(
         Animated.timing(discRotation, { toValue: 1, duration: 3000, useNativeDriver: true })
@@ -84,6 +91,12 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
       likerUsername: viewerProfile.username,
     }).catch(() => {});
     logEvent(liked ? 'unlike' : 'like', user.uid, { postId: post.id });
+  };
+
+  const handleSave = () => {
+    if (!user) return;
+    toggleSave(user.uid, post.id, saved).catch(() => {});
+    logEvent(saved ? 'unsave' : 'save', user.uid, { postId: post.id });
   };
 
   const handleShare = () => {
@@ -200,6 +213,10 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
 
         <Pressable onPress={handleShare} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="arrow-redo" size={30} color={colors.text} />
+        </Pressable>
+
+        <Pressable onPress={handleSave} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={28} color={saved ? colors.primary : colors.text} />
         </Pressable>
 
         <Animated.View style={[styles.discSpin, { transform: [{ rotate: discSpin }] }]}>

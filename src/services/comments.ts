@@ -1,10 +1,10 @@
-import { collection, doc, increment, onSnapshot, orderBy, query, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { createCommentNotification } from './notifications';
 import type { Comment } from '../types/comment';
 
 function commentsRef(postId: string) {
-  return collection(db, 'posts', postId, 'comments');
+  return collection(db, 'videos', postId, 'comments');
 }
 
 export function subscribeToComments(postId: string, onChange: (comments: Comment[]) => void) {
@@ -37,11 +37,10 @@ export async function addComment(params: {
   const trimmed = text.trim();
   if (!trimmed) return;
 
-  const batch = writeBatch(db);
-  const newCommentRef = doc(commentsRef(postId));
-  batch.set(newCommentRef, { uid, username, text: trimmed, createdAt: serverTimestamp() });
-  batch.update(doc(db, 'posts', postId), { commentsCount: increment(1) });
-  await batch.commit();
+  // commentCount is updated server-side by the onCommentCreate Cloud
+  // Function trigger (see functions/src/index.ts) — the client only ever
+  // writes the comment doc itself.
+  await addDoc(commentsRef(postId), { uid, username, text: trimmed, createdAt: serverTimestamp() });
 
   await createCommentNotification({
     toUid: postOwnerUid,
