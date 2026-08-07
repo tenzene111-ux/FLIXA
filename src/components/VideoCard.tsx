@@ -14,9 +14,10 @@ const TAB_BAR_HEIGHT = 60;
 type Props = {
   post: Post;
   isActive: boolean;
+  onPressAuthor: () => void;
 };
 
-export default function VideoCard({ post, isActive }: Props) {
+export default function VideoCard({ post, isActive, onPressAuthor }: Props) {
   const { user } = useAuth();
   const [liked, setLiked] = useState(false);
 
@@ -61,7 +62,13 @@ export default function VideoCard({ post, isActive }: Props) {
 
   return (
     <Pressable style={[styles.card, { width, height: height - TAB_BAR_HEIGHT }]} onPress={togglePlayback}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+        pointerEvents="none"
+      />
 
       {!isPlaying && (
         <View style={styles.pauseOverlay} pointerEvents="none">
@@ -72,9 +79,9 @@ export default function VideoCard({ post, isActive }: Props) {
       <View style={styles.scrim} pointerEvents="none" />
 
       <View style={styles.rightActions}>
-        <View style={styles.avatarPlaceholder}>
+        <Pressable onPress={onPressAuthor} style={styles.avatarPlaceholder} hitSlop={8}>
           <Text style={styles.avatarInitial}>{post.username.charAt(0).toUpperCase()}</Text>
-        </View>
+        </Pressable>
 
         <Pressable onPress={handleLike} style={styles.actionItem} hitSlop={8}>
           <Ionicons name={liked ? 'heart' : 'heart-outline'} size={30} color={liked ? colors.pink : colors.text} />
@@ -96,7 +103,9 @@ export default function VideoCard({ post, isActive }: Props) {
       </View>
 
       <View style={styles.bottomInfo}>
-        <Text style={styles.username}>{post.username}</Text>
+        <Pressable onPress={onPressAuthor} hitSlop={8}>
+          <Text style={styles.username}>{post.username}</Text>
+        </Pressable>
         {post.caption ? <Caption text={post.caption} /> : null}
       </View>
     </Pressable>

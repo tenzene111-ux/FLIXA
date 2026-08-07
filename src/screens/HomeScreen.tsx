@@ -10,11 +10,14 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import colors from '../theme/colors';
 import { subscribeToFeed } from '../services/posts';
 import type { Post } from '../types/post';
+import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 const { height } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 60;
@@ -22,6 +25,8 @@ const ITEM_HEIGHT = height - TAB_BAR_HEIGHT;
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
+  const isFocused = useIsFocused();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,8 +52,14 @@ export default function HomeScreen() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
 
   const renderItem = useCallback(
-    ({ item }: { item: Post }) => <VideoCard post={item} isActive={item.id === activeId} />,
-    [activeId]
+    ({ item }: { item: Post }) => (
+      <VideoCard
+        post={item}
+        isActive={isFocused && item.id === activeId}
+        onPressAuthor={() => navigation.navigate('UserProfile', { uid: item.uid, username: item.username })}
+      />
+    ),
+    [activeId, isFocused, navigation]
   );
 
   return (
