@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { createPost } from '../services/posts';
 import CameraCapture from '../components/CameraCapture';
 import { getErrorMessage } from '../utils/errors';
+import { logEvent } from '../services/analytics';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 type Selection = {
@@ -85,6 +86,7 @@ export default function UploadScreen() {
       });
       setSelection(null);
       setCaption('');
+      logEvent('post_created', user.uid);
       navigation.navigate('Home');
     } catch (error) {
       const message = getErrorMessage(error, 'Please check your connection and try again.');

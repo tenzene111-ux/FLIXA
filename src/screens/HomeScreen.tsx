@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -24,6 +24,12 @@ import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 const { height: windowHeight } = Dimensions.get('window');
 
+function rankScore(post: Post): number {
+  const ageHours = (Date.now() - post.createdAt) / (1000 * 60 * 60);
+  const freshnessBonus = Math.max(0, 48 - ageHours) * 2;
+  return post.likesCount * 3 + post.commentsCount * 5 + freshnessBonus;
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
@@ -34,6 +40,7 @@ export default function HomeScreen() {
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [posts, setPosts] = useState<Post[]>([]);
   const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -53,7 +60,17 @@ export default function HomeScreen() {
     return subscribeToFollowingUids(user.uid, setFollowingUids);
   }, [user]);
 
-  const visiblePosts = activeFeed === 'following' ? posts.filter((post) => followingUids.has(post.uid)) : posts;
+  const visiblePosts = useMemo(() => {
+    const notHidden = posts.filter((post) => !hiddenIds.has(post.id));
+
+    if (activeFeed === 'following') {
+      return notHidden.filter((post) => followingUids.has(post.uid));
+    }
+
+    // Lightweight ranking (not ML): recent + engaged posts surface first,
+    // with a freshness bonus that decays over 48h so new posts aren't buried.
+    return [...notHidden].sort((a, b) => rankScore(b) - rankScore(a));
+  }, [posts, hiddenIds, activeFeed, followingUids]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0) {
@@ -73,6 +90,7 @@ export default function HomeScreen() {
         onPressComments={() =>
           navigation.navigate('Comments', { postId: item.id, postOwnerUid: item.uid, postThumbnailUrl: item.thumbnailUrl })
         }
+        onNotInterested={() => setHiddenIds((prev) => new Set(prev).add(item.id))}
       />
     ),
     [activeId, isFocused, navigation, itemHeight]
@@ -127,7 +145,10 @@ export default function HomeScreen() {
           {activeFeed === 'forYou' && <View style={styles.headerTabUnderline} />}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.searchButton}>
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => (navigation as any).getParent()?.navigate('Explore')}
+        >
           <Ionicons name="search" size={22} color={colors.text} />
         </TouchableOpacity>
       </View>

@@ -15,52 +15,30 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { addComment, subscribeToComments } from '../services/comments';
-import { logEvent } from '../services/analytics';
-import type { Comment } from '../types/comment';
+import { sendMessage, subscribeToMessages } from '../services/messages';
+import type { ChatMessage } from '../types/message';
+import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
-type CommentsParamList = {
-  Comments: { postId: string; postOwnerUid: string; postThumbnailUrl: string };
-};
-
-function timeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
-
-export default function CommentsScreen() {
+export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { params } = useRoute<RouteProp<CommentsParamList, 'Comments'>>();
+  const { params } = useRoute<RouteProp<InboxStackParamList, 'Chat'>>();
   const { user } = useAuth();
-  const viewerProfile = useUserProfile(user?.uid);
+  const otherProfile = useUserProfile(params.otherUid);
 
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    return subscribeToComments(params.postId, setComments);
-  }, [params.postId]);
+    return subscribeToMessages(params.conversationId, setMessages);
+  }, [params.conversationId]);
 
   const handleSend = async () => {
-    if (!user || !viewerProfile || !text.trim()) return;
+    if (!user || !text.trim()) return;
     setSending(true);
     try {
-      await addComment({
-        postId: params.postId,
-        postOwnerUid: params.postOwnerUid,
-        postThumbnailUrl: params.postThumbnailUrl,
-        uid: user.uid,
-        username: viewerProfile.username,
-        text,
-      });
-      logEvent('comment', user.uid, { postId: params.postId });
+      await sendMessage(params.conversationId, user.uid, text);
       setText('');
     } finally {
       setSending(false);
@@ -75,51 +53,44 @@ export default function CommentsScreen() {
     >
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={navigation.goBack} hitSlop={8}>
-          <Ionicons name="close" size={24} color={colors.text} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{comments.length} comments</Text>
+        <Text style={styles.headerTitle}>@{otherProfile?.username ?? '...'}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <FlatList
-        data={comments}
+        data={messages}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => {
+          const isMine = item.senderUid === user?.uid;
+          return (
+            <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
+              <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                <Text style={styles.bubbleText}>{item.text}</Text>
+              </View>
+            </View>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="chatbubble-outline" size={36} color={colors.textDim} />
-            <Text style={styles.emptyText}>No comments yet</Text>
+            <Text style={styles.emptyText}>Say hello to @{otherProfile?.username ?? 'them'}</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.commentRow}>
-            <View style={styles.commentAvatar}>
-              <Text style={styles.commentAvatarInitial}>{item.username.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={styles.commentBody}>
-              <Text style={styles.commentUsername}>@{item.username}</Text>
-              <Text style={styles.commentText}>{item.text}</Text>
-              <Text style={styles.commentTime}>{timeAgo(item.createdAt)}</Text>
-            </View>
-          </View>
-        )}
       />
 
       <View style={[styles.inputBar, { paddingBottom: insets.bottom + 10 }]}>
         <TextInput
           style={styles.input}
-          placeholder="Add a comment..."
+          placeholder="Message..."
           placeholderTextColor={colors.textDim}
           value={text}
           onChangeText={setText}
           multiline
         />
         <TouchableOpacity onPress={handleSend} disabled={sending || !text.trim()} hitSlop={8}>
-          <Ionicons
-            name="send"
-            size={22}
-            color={text.trim() ? colors.primary : colors.textDim}
-          />
+          <Ionicons name="send" size={22} color={text.trim() ? colors.primary : colors.textDim} />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -153,46 +124,37 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     flexGrow: 1,
   },
-  commentRow: {
+  bubbleRow: {
+    marginBottom: 10,
     flexDirection: 'row',
-    marginBottom: 18,
-    gap: 10,
   },
-  commentAvatar: {
-    width: 32,
-    height: 32,
+  bubbleRowMine: {
+    justifyContent: 'flex-end',
+  },
+  bubbleRowTheirs: {
+    justifyContent: 'flex-start',
+  },
+  bubble: {
+    maxWidth: '75%',
     borderRadius: 16,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  commentAvatarInitial: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
+  bubbleMine: {
+    backgroundColor: colors.primary,
+    borderBottomRightRadius: 4,
   },
-  commentBody: {
-    flex: 1,
+  bubbleTheirs: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: 4,
   },
-  commentUsername: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  commentText: {
+  bubbleText: {
     color: colors.text,
     fontSize: 14,
-  },
-  commentTime: {
-    color: colors.textDim,
-    fontSize: 11,
-    marginTop: 4,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
-    gap: 8,
   },
   emptyText: {
     color: colors.textMuted,

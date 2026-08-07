@@ -9,6 +9,8 @@ import { subscribeToUserPosts } from '../services/posts';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { useAuth } from '../context/AuthContext';
 import { followUser, subscribeToFollowState, unfollowUser } from '../services/follows';
+import { getOrCreateConversation } from '../services/messages';
+import { logEvent } from '../services/analytics';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
@@ -28,6 +30,7 @@ export default function UserProfileScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [messageBusy, setMessageBusy] = useState(false);
 
   useEffect(() => {
     return subscribeToUserPosts(params.uid, setPosts, () => {});
@@ -51,9 +54,24 @@ export default function UserProfileScreen() {
         await unfollowUser({ followerUid: user.uid, followingUid: params.uid });
       } else {
         await followUser({ followerUid: user.uid, followerUsername: viewerProfile.username, followingUid: params.uid });
+        logEvent('follow', user.uid, { targetUid: params.uid });
       }
     } finally {
       setFollowBusy(false);
+    }
+  };
+
+  const handleMessage = async () => {
+    if (!user || messageBusy) return;
+    setMessageBusy(true);
+    try {
+      const conversationId = await getOrCreateConversation(user.uid, params.uid);
+      (navigation as any).getParent()?.navigate('Inbox', {
+        screen: 'Chat',
+        params: { conversationId, otherUid: params.uid },
+      });
+    } finally {
+      setMessageBusy(false);
     }
   };
 
@@ -101,16 +119,28 @@ export default function UserProfileScreen() {
               </View>
 
               {!isOwnProfile && (
-                <TouchableOpacity
-                  style={[styles.followButton, isFollowing && styles.followingButton]}
-                  onPress={handleToggleFollow}
-                  disabled={followBusy}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.followButtonLabel, isFollowing && styles.followingButtonLabel]}>
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.followButton, isFollowing && styles.followingButton]}
+                    onPress={handleToggleFollow}
+                    disabled={followBusy}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.followButtonLabel, isFollowing && styles.followingButtonLabel]}>
+                      {isFollowing ? 'Following' : 'Follow'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.messageButton}
+                    onPress={handleMessage}
+                    disabled={messageBusy}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="paper-plane-outline" size={16} color={colors.text} />
+                    <Text style={styles.messageButtonLabel}>Message</Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
@@ -240,12 +270,32 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: 'center',
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    gap: 10,
+  },
   followButton: {
     backgroundColor: colors.primary,
     borderRadius: 20,
     paddingVertical: 9,
-    paddingHorizontal: 36,
-    marginTop: 18,
+    paddingHorizontal: 28,
+  },
+  messageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    gap: 6,
+  },
+  messageButtonLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
   },
   followingButton: {
     backgroundColor: 'transparent',

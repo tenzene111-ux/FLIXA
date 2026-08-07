@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import HomeStackNavigator from './HomeStackNavigator';
 import ExploreStackNavigator from './ExploreStackNavigator';
 import UploadScreen from '../screens/UploadScreen';
-import InboxScreen from '../screens/InboxScreen';
+import InboxStackNavigator from './InboxStackNavigator';
 import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
 
@@ -75,7 +75,7 @@ export default function MainTabNavigator() {
       <Tab.Screen name="Home" component={HomeStackNavigator} />
       <Tab.Screen name="Explore" component={ExploreStackNavigator} />
       <Tab.Screen name="Upload" component={UploadScreen} />
-      <Tab.Screen name="Inbox" component={InboxScreen} />
+      <Tab.Screen name="Inbox" component={InboxStackNavigator} />
       <Tab.Screen name="Profile" component={ProfileStackNavigator} />
     </Tab.Navigator>
   );

@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { markNotificationRead, subscribeToNotifications } from '../services/notifications';
 import type { Notification } from '../types/notification';
+import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
 function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -42,6 +45,7 @@ function notificationText(notification: Notification): string {
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -57,7 +61,12 @@ export default function InboxScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { paddingTop: insets.top + 8 }]}>Inbox</Text>
+      <View style={[styles.headerRow, { paddingTop: insets.top + 8 }]}>
+        <Text style={styles.title}>Inbox</Text>
+        <TouchableOpacity style={styles.messagesButton} onPress={() => navigation.navigate('Messages')} hitSlop={8}>
+          <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
 
       <FlatList
         data={notifications}
@@ -96,12 +105,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
   title: {
     color: colors.text,
     fontSize: 20,
     fontWeight: '800',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+  },
+  messagesButton: {
+    padding: 4,
   },
   listContent: {
     paddingHorizontal: 16,
