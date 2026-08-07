@@ -30,11 +30,15 @@ export default function EditProfileScreen() {
   const profile = useUserProfile(user?.uid);
 
   const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
   const [localPhotoUri, setLocalPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (profile) setDisplayName(profile.displayName);
+    if (profile) {
+      setDisplayName(profile.displayName);
+      setBio(profile.bio);
+    }
   }, [profile]);
 
   const handlePickPhoto = async () => {
@@ -60,6 +64,7 @@ export default function EditProfileScreen() {
       const photoURL = localPhotoUri ? await uploadAvatar(user.uid, localPhotoUri) : undefined;
       await updateUserProfile(user.uid, {
         displayName: displayName.trim() || profile?.username || 'Flixa user',
+        bio: bio.trim(),
         ...(photoURL ? { photoURL } : {}),
       });
       navigation.goBack();
@@ -122,6 +127,19 @@ export default function EditProfileScreen() {
             placeholder="Your name"
             placeholderTextColor={colors.textDim}
             maxLength={40}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Bio</Text>
+          <TextInput
+            style={[styles.input, styles.bioInput]}
+            value={bio}
+            onChangeText={setBio}
+            placeholder="Musician | Creator | Dreamer"
+            placeholderTextColor={colors.textDim}
+            maxLength={80}
+            multiline
           />
         </View>
 
@@ -235,6 +253,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.text,
     fontSize: 15,
+  },
+  bioInput: {
+    minHeight: 70,
+    textAlignVertical: 'top',
   },
   usernameRow: {
     flexDirection: 'row',

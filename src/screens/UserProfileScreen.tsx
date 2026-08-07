@@ -71,14 +71,23 @@ export default function UserProfileScreen() {
               <Text style={styles.displayName}>{displayName}</Text>
 
               <View style={styles.statsRow}>
-                <Stat label="Videos" value={String(posts.length)} />
+                <Stat label="Following" value={formatCount(profile?.followingCount ?? 0)} />
+                <Stat label="Followers" value={formatCount(profile?.followersCount ?? 0)} />
                 <Stat label="Likes" value={formatCount(totalLikes)} />
               </View>
+
+              {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
             </View>
 
             <View style={styles.gridHeader}>
               <View style={[styles.gridTab, styles.gridTabActive]}>
                 <Ionicons name="grid-outline" size={18} color={colors.text} />
+              </View>
+              <View style={styles.gridTab}>
+                <Ionicons name="bookmark-outline" size={18} color={colors.textDim} />
+              </View>
+              <View style={styles.gridTab}>
+                <Ionicons name="pricetag-outline" size={18} color={colors.textDim} />
               </View>
             </View>
           </>
@@ -142,6 +151,7 @@ const styles = StyleSheet.create({
   profileTop: {
     alignItems: 'center',
     paddingBottom: 12,
+    paddingHorizontal: 24,
   },
   avatarRing: {
     width: 100,
@@ -185,7 +195,13 @@ const styles = StyleSheet.create({
   },
   stat: {
     alignItems: 'center',
-    marginHorizontal: 24,
+    marginHorizontal: 20,
+  },
+  bio: {
+    color: colors.text,
+    fontSize: 13,
+    marginTop: 16,
+    textAlign: 'center',
   },
   statValue: {
     color: colors.text,

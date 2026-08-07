@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, Image, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +32,10 @@ export default function ProfileScreen() {
   }, [user]);
 
   const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
+
+  const handleShare = () => {
+    Share.share({ message: `Check out @${username} on Flixa!` }).catch(() => {});
+  };
 
   return (
     <View style={styles.container}>
@@ -70,22 +74,39 @@ export default function ProfileScreen() {
               <Text style={styles.displayName}>{displayName}</Text>
 
               <View style={styles.statsRow}>
-                <Stat label="Videos" value={String(posts.length)} />
+                <Stat label="Following" value={formatCount(profile?.followingCount ?? 0)} />
+                <Stat label="Followers" value={formatCount(profile?.followersCount ?? 0)} />
                 <Stat label="Likes" value={formatCount(totalLikes)} />
               </View>
 
-              <TouchableOpacity
-                style={styles.editButton}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('EditProfile')}
-              >
-                <Text style={styles.editButtonLabel}>Edit Profile</Text>
-              </TouchableOpacity>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  activeOpacity={0.85}
+                  onPress={() => navigation.navigate('EditProfile')}
+                >
+                  <Text style={styles.editButtonLabel}>Edit Profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={handleShare}>
+                  <Ionicons name="share-outline" size={18} color={colors.text} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton}>
+                  <Ionicons name="bookmark-outline" size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
             </View>
 
             <View style={styles.gridHeader}>
               <View style={[styles.gridTab, styles.gridTabActive]}>
                 <Ionicons name="grid-outline" size={18} color={colors.text} />
+              </View>
+              <View style={styles.gridTab}>
+                <Ionicons name="bookmark-outline" size={18} color={colors.textDim} />
+              </View>
+              <View style={styles.gridTab}>
+                <Ionicons name="pricetag-outline" size={18} color={colors.textDim} />
               </View>
             </View>
           </>
@@ -150,6 +171,7 @@ const styles = StyleSheet.create({
   profileTop: {
     alignItems: 'center',
     paddingBottom: 12,
+    paddingHorizontal: 24,
   },
   avatarRing: {
     width: 100,
@@ -193,7 +215,7 @@ const styles = StyleSheet.create({
   },
   stat: {
     alignItems: 'center',
-    marginHorizontal: 24,
+    marginHorizontal: 20,
   },
   statValue: {
     color: colors.text,
@@ -205,18 +227,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    gap: 10,
+  },
   editButton: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 20,
     paddingVertical: 9,
     paddingHorizontal: 28,
-    marginTop: 18,
   },
   editButtonLabel: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '700',
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bio: {
+    color: colors.text,
+    fontSize: 13,
+    marginTop: 16,
+    textAlign: 'center',
   },
   gridHeader: {
     flexDirection: 'row',

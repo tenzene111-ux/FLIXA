@@ -11,6 +11,9 @@ function mapDocToProfile(uid: string, data: DocumentData): UserProfile {
     username: data.username,
     displayName: data.displayName ?? data.username,
     photoURL: data.photoURL ?? null,
+    bio: data.bio ?? '',
+    followingCount: data.followingCount ?? 0,
+    followersCount: data.followersCount ?? 0,
   };
 }
 
@@ -18,7 +21,14 @@ export async function ensureUserProfile(uid: string, username: string): Promise<
   const profileRef = doc(db, USERS_COLLECTION, uid);
   const existing = await getDoc(profileRef);
   if (existing.exists()) return;
-  await setDoc(profileRef, { username, displayName: username, photoURL: null });
+  await setDoc(profileRef, {
+    username,
+    displayName: username,
+    photoURL: null,
+    bio: '',
+    followingCount: 0,
+    followersCount: 0,
+  });
 }
 
 export function subscribeToUserProfile(uid: string, onChange: (profile: UserProfile | null) => void) {
@@ -27,7 +37,10 @@ export function subscribeToUserProfile(uid: string, onChange: (profile: UserProf
   });
 }
 
-export async function updateUserProfile(uid: string, updates: { displayName?: string; photoURL?: string }) {
+export async function updateUserProfile(
+  uid: string,
+  updates: { displayName?: string; photoURL?: string; bio?: string }
+) {
   await updateDoc(doc(db, USERS_COLLECTION, uid), updates);
 }
 
