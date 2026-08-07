@@ -68,8 +68,9 @@ export default function EditProfileScreen() {
         ...(photoURL ? { photoURL } : {}),
       });
       navigation.goBack();
-    } catch {
-      Alert.alert('Could not save changes', 'Please check your connection and try again.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please check your connection and try again.';
+      Alert.alert('Could not save changes', message);
     } finally {
       setSaving(false);
     }
