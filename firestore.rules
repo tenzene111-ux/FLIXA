@@ -11,13 +11,14 @@ service cloud.firestore {
 
     // ---- Video posts (likeCount/commentCount are server-authoritative,
     // updated by Cloud Function triggers in functions/src/index.ts —
-    // clients may only bump shareCount directly) ----
+    // clients may only bump shareCount/viewCount directly, since neither
+    // is security- or money-sensitive) ----
     match /videos/{videoId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.uploaderId == request.auth.uid;
       allow delete: if isOwner(resource.data.uploaderId);
       allow update: if isSignedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareCount', 'viewCount']);
 
       match /likes/{uid} {
         allow read: if isSignedIn();

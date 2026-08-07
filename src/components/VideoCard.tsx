@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { subscribeToLikeState, toggleLike } from '../services/posts';
+import { incrementView, subscribeToLikeState, toggleLike } from '../services/posts';
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
@@ -58,6 +58,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     if (isActive) {
       player.currentTime = trimStart;
       player.play();
+      incrementView(post.id);
       if (user) logEvent('video_view', user.uid, { postId: post.id });
     } else {
       player.pause();

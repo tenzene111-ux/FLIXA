@@ -24,10 +24,27 @@ import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 const { height: windowHeight } = Dimensions.get('window');
 
+// Staged distribution (not ML): every post first gets shown to a small
+// sample audience. Once it's collected enough views to measure, its
+// engagement rate decides whether it gets promoted to a wider audience or
+// stays capped — mirroring TikTok's real small-audience-test-then-scale
+// pipeline as an explicit, explainable formula instead of a black box.
+const SAMPLE_AUDIENCE_SIZE = 50;
+const GOOD_ENGAGEMENT_RATE = 0.05;
+const PROMOTED_MULTIPLIER = 2.2;
+const CAPPED_MULTIPLIER = 0.35;
+
 function rankScore(post: Post): number {
   const ageHours = (Date.now() - post.createdAt) / (1000 * 60 * 60);
   const freshnessBonus = Math.max(0, 48 - ageHours) * 2;
-  return post.likesCount * 3 + post.commentsCount * 5 + freshnessBonus;
+  const baseScore = post.likesCount * 3 + post.commentsCount * 5 + freshnessBonus;
+
+  if (post.viewCount < SAMPLE_AUDIENCE_SIZE) {
+    return baseScore;
+  }
+
+  const engagementRate = (post.likesCount + post.commentsCount) / post.viewCount;
+  return baseScore * (engagementRate >= GOOD_ENGAGEMENT_RATE ? PROMOTED_MULTIPLIER : CAPPED_MULTIPLIER);
 }
 
 export default function HomeScreen() {

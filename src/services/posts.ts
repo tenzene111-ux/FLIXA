@@ -7,6 +7,7 @@ import {
   documentId,
   getDoc,
   getDocs,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -14,6 +15,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
@@ -35,6 +37,7 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
       thumbnailUrl: data.thumbnailUrl,
       likesCount: data.likeCount ?? 0,
       commentsCount: data.commentCount ?? 0,
+      viewCount: data.viewCount ?? 0,
       createdAt,
       trimStart: data.trimStart ?? 0,
       trimEnd: data.trimEnd ?? null,
@@ -135,12 +138,20 @@ export async function createPost(params: {
     likeCount: 0,
     commentCount: 0,
     shareCount: 0,
+    viewCount: 0,
     trimStart: params.trimStart ?? 0,
     trimEnd: params.trimEnd ?? null,
     overlays: params.overlays ?? [],
     musicTitle: params.musicTitle ?? '',
     createdAt: serverTimestamp(),
   });
+}
+
+// viewCount is a low-stakes counter (like shareCount) that the client is
+// allowed to bump directly — it only feeds the staged-distribution ranking
+// in HomeScreen, nothing security- or money-sensitive.
+export function incrementView(postId: string) {
+  updateDoc(doc(db, VIDEOS_COLLECTION, postId), { viewCount: increment(1) }).catch(() => {});
 }
 
 export function subscribeToLikeState(postId: string, uid: string, onChange: (liked: boolean) => void) {

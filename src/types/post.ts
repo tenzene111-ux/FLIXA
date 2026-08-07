@@ -14,6 +14,7 @@ export type Post = {
   thumbnailUrl: string;
   likesCount: number;
   commentsCount: number;
+  viewCount: number;
   createdAt: number;
   trimStart: number;
   trimEnd: number | null;
