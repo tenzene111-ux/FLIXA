@@ -21,6 +21,7 @@ import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { updateUserProfile, uploadAvatar } from '../services/users';
+import { getErrorMessage } from '../utils/errors';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
 
 export default function EditProfileScreen() {
@@ -69,7 +70,7 @@ export default function EditProfileScreen() {
       });
       navigation.goBack();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please check your connection and try again.';
+      const message = getErrorMessage(error, 'Please check your connection and try again.');
       Alert.alert('Could not save changes', message);
     } finally {
       setSaving(false);

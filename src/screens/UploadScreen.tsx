@@ -12,6 +12,7 @@ import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { createPost } from '../services/posts';
 import CameraCapture from '../components/CameraCapture';
+import { getErrorMessage } from '../utils/errors';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 type Selection = {
@@ -40,7 +41,7 @@ export default function UploadScreen() {
       const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
       setSelection({ videoUri, thumbnailUri });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try a different clip.';
+      const message = getErrorMessage(error, 'Please try a different clip.');
       Alert.alert("Couldn't process that video", message);
     }
   };
@@ -86,7 +87,7 @@ export default function UploadScreen() {
       setCaption('');
       navigation.navigate('Home');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please check your connection and try again.';
+      const message = getErrorMessage(error, 'Please check your connection and try again.');
       Alert.alert('Upload failed', message);
     } finally {
       setUploading(false);
