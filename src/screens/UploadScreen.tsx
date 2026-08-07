@@ -277,6 +277,15 @@ export default function UploadScreen() {
           <Ionicons name="images-outline" size={20} color={colors.text} />
           <Text style={styles.secondaryButtonLabel}>Choose from Gallery</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Home', { screen: 'LiveHost' })}
+          activeOpacity={0.85}
+          style={styles.secondaryButton}
+        >
+          <Ionicons name="radio-outline" size={20} color={colors.text} />
+          <Text style={styles.secondaryButtonLabel}>Go Live</Text>
+        </TouchableOpacity>
       </View>
     );
   }

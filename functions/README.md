@@ -15,6 +15,14 @@ amounts and receipt validation that a client can't be trusted to self-report.
 - `verifyTopupPurchase({ platform, productId, purchaseToken })` — intended to
   credit a wallet after a real App Store / Play Store in-app purchase. **This
   one is a stub** (see below).
+- `sendGift({ contextType, contextId, toUid, fromUsername })` — debits the
+  sender's coins and credits the recipient's diamonds in one transaction, on
+  either a video (`contextType: 'video'`) or a live stream
+  (`contextType: 'liveStream'`), and records the gift for that item's
+  leaderboard.
+- `getLiveKitToken({ roomName, canPublish })` — mints a short-lived LiveKit
+  join token for the calling user. **Requires the LiveKit secrets below** —
+  see "LiveKit setup".
 
 ## Setup
 
@@ -24,6 +32,26 @@ npm install
 firebase login
 firebase deploy --only functions,firestore:rules
 ```
+
+## LiveKit setup
+
+`getLiveKitToken` needs three secrets before live streaming will work at
+all — without them it throws instead of silently returning a broken token:
+
+1. Create a project at https://cloud.livekit.io (or self-host) and copy its
+   API Key, API Secret, and WebSocket URL (looks like
+   `wss://your-project.livekit.cloud`).
+2. Store them as function secrets (never commit them):
+   ```bash
+   firebase functions:secrets:set LIVEKIT_API_KEY
+   firebase functions:secrets:set LIVEKIT_API_SECRET
+   firebase functions:secrets:set LIVEKIT_URL
+   ```
+3. Deploy: `firebase deploy --only functions`.
+
+The client never sees the API key/secret — only the per-user join token
+`getLiveKitToken` returns, and the server URL (not sensitive, just where to
+connect).
 
 ## Finishing `verifyTopupPurchase`
 

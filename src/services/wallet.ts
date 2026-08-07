@@ -48,7 +48,7 @@ export const spendCoins = httpsCallable<{ item: 'live_gift' | 'video_boost' }, {
   'spendCoins'
 );
 
-export const sendGift = httpsCallable<{ videoId: string; toUid: string; fromUsername: string }, { balance: number }>(
-  functions,
-  'sendGift'
-);
+export const sendGift = httpsCallable<
+  { contextType: 'video' | 'liveStream'; contextId: string; toUid: string; fromUsername: string },
+  { balance: number }
+>(functions, 'sendGift');

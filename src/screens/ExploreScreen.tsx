@@ -3,6 +3,8 @@ import { ActivityIndicator, Alert, FlatList, Image, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
@@ -113,7 +115,13 @@ export default function ExploreScreen() {
               <TouchableOpacity
                 key={tab}
                 style={[styles.tab, tab === 'Trending' && styles.tabActive]}
-                onPress={() => tab !== 'Trending' && Alert.alert(tab, 'Coming soon')}
+                onPress={() => {
+                  if (tab === 'Live') {
+                    navigation.getParent<BottomTabNavigationProp<MainTabParamList>>()?.navigate('Home', { screen: 'LiveList' });
+                  } else if (tab !== 'Trending') {
+                    Alert.alert(tab, 'Coming soon');
+                  }
+                }}
               >
                 <Text style={[styles.tabLabel, tab === 'Trending' && styles.tabLabelActive]}>{tab}</Text>
               </TouchableOpacity>

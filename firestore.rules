@@ -117,15 +117,36 @@ service cloud.firestore {
       }
     }
 
-    // ---- Live streaming (not yet built client-side; collection reserved) ----
+    // ---- Live streaming ----
     match /liveStreams/{streamId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
+      allow delete: if isOwner(resource.data.hostUid);
+      // The host can only end their own stream / edit its title — viewer
+      // count is derived client-side from the viewers subcollection below,
+      // never stored as a trusted field here.
+      allow update: if isOwner(resource.data.hostUid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isLive', 'title']);
 
       match /comments/{commentId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
         allow update, delete: if false;
+      }
+
+      // Presence: each viewer owns exactly one doc (id = uid), created on
+      // join and deleted on leave, so a live viewer count is just this
+      // subcollection's size.
+      match /viewers/{uid} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(uid);
+      }
+
+      // Same pattern as videos/{id}/gifts: only the sendGift Cloud
+      // Function may write one.
+      match /gifts/{giftId} {
+        allow read: if isSignedIn();
+        allow write: if false;
       }
     }
 

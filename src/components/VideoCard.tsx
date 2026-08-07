@@ -109,7 +109,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   // feed cards don't each carry a live gifts listener.
   useEffect(() => {
     if (!showLeaderboard) return;
-    return subscribeToGiftLeaderboard(post.id, setLeaderboard);
+    return subscribeToGiftLeaderboard('video', post.id, setLeaderboard);
   }, [showLeaderboard, post.id]);
 
   useEffect(() => {
@@ -160,7 +160,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     setSendingGift(true);
     // Payment (the coin debit) is confirmed by the callable resolving —
     // the burst animation only plays after that, never before.
-    sendGift({ videoId: post.id, toUid: post.uid, fromUsername: viewerProfile.username })
+    sendGift({ contextType: 'video', contextId: post.id, toUid: post.uid, fromUsername: viewerProfile.username })
       .then(() => {
         triggerGiftBurst();
         logEvent('gift_sent', user.uid, { postId: post.id });

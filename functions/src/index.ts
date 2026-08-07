@@ -2,6 +2,8 @@ import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onDocumentCreated, onDocumentDeleted } from 'firebase-functions/v2/firestore';
+import { defineSecret } from 'firebase-functions/params';
+import { AccessToken } from 'livekit-server-sdk';
 
 initializeApp();
 const db = getFirestore();
@@ -82,26 +84,36 @@ export const spendCoins = onCall<{ item: keyof typeof SPEND_CATALOG }>(async (re
   return applyWalletDelta(request.auth.uid, -entry.cost, 'gift', entry.label);
 });
 
-// Sending a gift on a video is the one spend that has a recipient: unlike
-// spendCoins above (which only debits the caller), this debits the sender's
-// coin balance AND credits the video owner's diamond balance in the same
-// transaction, then records the gift so a per-video leaderboard can be
-// built from it (clients can only read videos/{id}/gifts, never write it —
-// every entry here is backed by a real coin movement).
+// Sending a gift (on a video, or in a live stream) is the one spend that
+// has a recipient: unlike spendCoins above (which only debits the caller),
+// this debits the sender's coin balance AND credits the recipient's
+// diamond balance in the same transaction, then records the gift so a
+// leaderboard can be built from it (clients can only read the gifts
+// subcollection, never write it — every entry here is backed by a real
+// coin movement).
 const GIFT_COST = 500;
 const GIFT_DIAMONDS = 500; // 1:1 coins-to-diamonds; real platforms take a cut, this doesn't yet.
 
-export const sendGift = onCall<{ videoId: string; toUid: string; fromUsername: string }>(async (request) => {
+export const sendGift = onCall<{
+  contextType: 'video' | 'liveStream';
+  contextId: string;
+  toUid: string;
+  fromUsername: string;
+}>(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
-  const { videoId, toUid, fromUsername } = request.data;
+  const { contextType, contextId, toUid, fromUsername } = request.data;
   const fromUid = request.auth.uid;
-  if (!videoId || !toUid) throw new HttpsError('invalid-argument', 'Missing videoId or toUid.');
-  if (fromUid === toUid) throw new HttpsError('failed-precondition', "Can't gift your own video.");
+  if (!contextId || !toUid) throw new HttpsError('invalid-argument', 'Missing contextId or toUid.');
+  if (contextType !== 'video' && contextType !== 'liveStream') {
+    throw new HttpsError('invalid-argument', 'Unknown contextType.');
+  }
+  if (fromUid === toUid) throw new HttpsError('failed-precondition', "Can't gift yourself.");
 
+  const collectionName = contextType === 'video' ? 'videos' : 'liveStreams';
   const senderWalletRef = db.doc(`wallets/${fromUid}`);
   const recipientWalletRef = db.doc(`wallets/${toUid}`);
   const senderTxRef = db.collection(`wallets/${fromUid}/transactions`).doc();
-  const giftRef = db.collection(`videos/${videoId}/gifts`).doc();
+  const giftRef = db.collection(`${collectionName}/${contextId}/gifts`).doc();
 
   return db.runTransaction(async (tx) => {
     const senderSnap = await tx.get(senderWalletRef);
@@ -176,3 +188,29 @@ export const verifyTopupPurchase = onCall<{
   // await processedRef.set({ uid: request.auth.uid, productId, createdAt: Date.now() });
   // return applyWalletDelta(request.auth.uid, coinAmount, 'topup', `Top Up (${coinAmount})`);
 });
+
+// LiveKit credentials never reach the client — they're bound to this
+// function via secrets (set with `firebase functions:secrets:set`) and
+// used here to mint a short-lived, per-user join token. The room name is
+// the liveStreams/{id} document id, so one Firestore doc maps to one
+// LiveKit room.
+const livekitApiKey = defineSecret('LIVEKIT_API_KEY');
+const livekitApiSecret = defineSecret('LIVEKIT_API_SECRET');
+const livekitUrl = defineSecret('LIVEKIT_URL');
+
+export const getLiveKitToken = onCall<{ roomName: string; canPublish: boolean }>(
+  { secrets: [livekitApiKey, livekitApiSecret, livekitUrl] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const { roomName, canPublish } = request.data;
+    if (!roomName) throw new HttpsError('invalid-argument', 'Missing roomName.');
+
+    const at = new AccessToken(livekitApiKey.value(), livekitApiSecret.value(), {
+      identity: request.auth.uid,
+    });
+    at.addGrant({ roomJoin: true, room: roomName, canPublish: !!canPublish, canSubscribe: true });
+    const token = await at.toJwt();
+
+    return { token, serverUrl: livekitUrl.value() };
+  }
+);

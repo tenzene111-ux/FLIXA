@@ -2,9 +2,10 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import HomeStackNavigator from './HomeStackNavigator';
+import HomeStackNavigator, { type HomeStackParamList } from './HomeStackNavigator';
 import ExploreStackNavigator from './ExploreStackNavigator';
 import UploadScreen from '../screens/UploadScreen';
 import InboxStackNavigator from './InboxStackNavigator';
@@ -12,7 +13,7 @@ import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
 
 export type MainTabParamList = {
-  Home: undefined;
+  Home: NavigatorScreenParams<HomeStackParamList> | undefined;
   Explore: undefined;
   Upload: { draftId?: string } | undefined;
   Inbox: undefined;
