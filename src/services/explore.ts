@@ -102,5 +102,9 @@ export async function getTopPost(): Promise<Post | null> {
     likesCount: data.likeCount ?? 0,
     commentsCount: data.commentCount ?? 0,
     createdAt: Date.now(),
+    trimStart: data.trimStart ?? 0,
+    trimEnd: data.trimEnd ?? null,
+    overlays: data.overlays ?? [],
+    musicTitle: data.musicTitle ?? '',
   };
 }

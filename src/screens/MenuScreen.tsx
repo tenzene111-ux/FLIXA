@@ -25,7 +25,7 @@ const ITEMS: MenuItem[] = [
     label: 'Saved Videos',
     onPress: (nav) => nav.navigate('MyProfile', { initialTab: 'saved' }),
   },
-  { icon: 'document-text-outline', label: 'Drafts', onPress: () => Alert.alert('Drafts', 'Coming soon') },
+  { icon: 'document-text-outline', label: 'Drafts', onPress: (nav) => nav.navigate('Drafts') },
   { icon: 'time-outline', label: 'History', onPress: () => Alert.alert('History', 'Coming soon') },
   { icon: 'settings-outline', label: 'Settings', onPress: () => Alert.alert('Settings', 'Coming soon') },
   { icon: 'shield-checkmark-outline', label: 'Privacy Center', onPress: () => Alert.alert('Privacy Center', 'Coming soon') },

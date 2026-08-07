@@ -14,7 +14,7 @@ import colors from '../theme/colors';
 export type MainTabParamList = {
   Home: undefined;
   Explore: undefined;
-  Upload: undefined;
+  Upload: { draftId?: string } | undefined;
   Inbox: undefined;
   Profile: undefined;
 };

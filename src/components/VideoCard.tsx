@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Dimensions, Image, PanResponder, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,10 +10,12 @@ import { subscribeToLikeState, toggleLike } from '../services/posts';
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
+import OverlayLayer from './OverlayLayer';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
 const DOUBLE_TAP_WINDOW_MS = 300;
+const SWIPE_TRIGGER_DISTANCE = 60;
 
 type Props = {
   post: Post;
@@ -47,16 +49,29 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     currentOffsetFromLive: null,
     bufferedPosition: 0,
   });
-  const progress = player.duration > 0 ? Math.min(1, currentTime / player.duration) : 0;
+  const trimStart = post.trimStart ?? 0;
+  const trimEnd = post.trimEnd && post.trimEnd > trimStart ? post.trimEnd : player.duration;
+  const trimWindow = Math.max(0, trimEnd - trimStart);
+  const progress = trimWindow > 0 ? Math.min(1, Math.max(0, (currentTime - trimStart) / trimWindow)) : 0;
 
   useEffect(() => {
     if (isActive) {
+      player.currentTime = trimStart;
       player.play();
       if (user) logEvent('video_view', user.uid, { postId: post.id });
     } else {
       player.pause();
     }
   }, [isActive, player]);
+
+  // Loop within the trimmed window instead of the whole file once trim
+  // bounds are set on the post.
+  useEffect(() => {
+    if (!isActive || !post.trimEnd) return;
+    if (currentTime < trimStart || currentTime >= trimEnd) {
+      player.currentTime = trimStart;
+    }
+  }, [currentTime, isActive]);
 
   useEffect(() => {
     if (!user) return;
@@ -156,11 +171,32 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
       .catch(() => {});
   };
 
+  // A swipe (left or right) jumps to the creator's profile, same as tapping
+  // the avatar/username. The PanResponder lives on the wrapper View so it
+  // can steal a clearly-horizontal drag away from the inner Pressable
+  // (which owns tap/double-tap/long-press) without interfering with the
+  // FlatList's vertical paging.
+  const onPressAuthorRef = useRef(onPressAuthor);
+  onPressAuthorRef.current = onPressAuthor;
+  const swipeResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        Math.abs(gesture.dx) > 20 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (Math.abs(gesture.dx) > SWIPE_TRIGGER_DISTANCE) {
+          onPressAuthorRef.current();
+        }
+      },
+    })
+  ).current;
+
   const displayUsername = author?.username ?? '...';
   const discSpin = discRotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <Pressable style={[styles.card, { width, height }]} onPress={handlePress}>
+    <View style={{ width, height }} {...swipeResponder.panHandlers}>
+      <Pressable style={[styles.card, { width, height }]} onPress={handlePress} onLongPress={handleMoreOptions}>
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -176,6 +212,8 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
       )}
 
       <View style={styles.scrim} pointerEvents="none" />
+
+      {post.overlays.length > 0 ? <OverlayLayer overlays={post.overlays} /> : null}
 
       <Animated.View
         style={[
@@ -229,12 +267,21 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           <Text style={styles.username}>@{displayUsername}</Text>
         </Pressable>
         {post.caption ? <Caption text={post.caption} /> : null}
+        {post.musicTitle ? (
+          <View style={styles.musicRow}>
+            <Ionicons name="musical-notes" size={13} color={colors.text} />
+            <Text style={styles.musicLabel} numberOfLines={1}>
+              {post.musicTitle}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.progressTrack} pointerEvents="none">
         <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -368,6 +415,18 @@ const styles = StyleSheet.create({
   hashtag: {
     color: colors.cyan,
     fontWeight: '600',
+  },
+  musicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  musicLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   progressTrack: {
     position: 'absolute',

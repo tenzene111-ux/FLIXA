@@ -19,7 +19,7 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
 import { createLikeNotification } from './notifications';
-import type { Post } from '../types/post';
+import type { Post, VideoOverlay } from '../types/post';
 
 const VIDEOS_COLLECTION = 'videos';
 
@@ -36,6 +36,10 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
       likesCount: data.likeCount ?? 0,
       commentsCount: data.commentCount ?? 0,
       createdAt,
+      trimStart: data.trimStart ?? 0,
+      trimEnd: data.trimEnd ?? null,
+      overlays: data.overlays ?? [],
+      musicTitle: data.musicTitle ?? '',
     };
   });
 }
@@ -102,6 +106,10 @@ export async function createPost(params: {
   caption: string;
   videoUri: string;
   thumbnailUri: string;
+  trimStart?: number;
+  trimEnd?: number | null;
+  overlays?: VideoOverlay[];
+  musicTitle?: string;
   onProgress?: (pct: number) => void;
 }) {
   const timestamp = Date.now();
@@ -127,6 +135,10 @@ export async function createPost(params: {
     likeCount: 0,
     commentCount: 0,
     shareCount: 0,
+    trimStart: params.trimStart ?? 0,
+    trimEnd: params.trimEnd ?? null,
+    overlays: params.overlays ?? [],
+    musicTitle: params.musicTitle ?? '',
     createdAt: serverTimestamp(),
   });
 }

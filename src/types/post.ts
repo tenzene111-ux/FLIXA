@@ -1,3 +1,11 @@
+export type VideoOverlay = {
+  id: string;
+  kind: 'text' | 'sticker';
+  content: string;
+  x: number; // 0..1 fraction of video width
+  y: number; // 0..1 fraction of video height
+};
+
 export type Post = {
   id: string;
   uid: string;
@@ -7,4 +15,8 @@ export type Post = {
   likesCount: number;
   commentsCount: number;
   createdAt: number;
+  trimStart: number;
+  trimEnd: number | null;
+  overlays: VideoOverlay[];
+  musicTitle: string;
 };
