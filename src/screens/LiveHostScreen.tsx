@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { AudioSession, isTrackReference, LiveKitRoom, useTracks, VideoTrack } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import colors from '../theme/colors';
@@ -41,6 +42,8 @@ export default function LiveHostScreen() {
   const [streamId, setStreamId] = useState<string | null>(null);
   const [session, setSession] = useState<{ token: string; serverUrl: string } | null>(null);
   const [starting, setStarting] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   useEffect(() => {
     AudioSession.startAudioSession();
@@ -49,8 +52,20 @@ export default function LiveHostScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!cameraPermission?.granted) requestCameraPermission();
+    if (!micPermission?.granted) requestMicPermission();
+  }, []);
+
   const handleGoLive = async () => {
     if (!user || !profile || starting) return;
+    if (!cameraPermission?.granted || !micPermission?.granted) {
+      Alert.alert(
+        'Camera & microphone needed',
+        'Enable camera and microphone access in Settings to go live.'
+      );
+      return;
+    }
     setStarting(true);
     try {
       const id = await createLiveStream(user.uid, profile.username, title.trim() || `${profile.username}'s live`);
@@ -86,7 +101,37 @@ export default function LiveHostScreen() {
           value={title}
           onChangeText={setTitle}
         />
-        <TouchableOpacity style={styles.goLiveButton} onPress={handleGoLive} disabled={starting} activeOpacity={0.85}>
+        {cameraPermission && !cameraPermission.granted ? (
+          <Text style={styles.permissionNotice}>
+            Camera access is required to go live.{' '}
+            {cameraPermission.canAskAgain ? (
+              <Text style={styles.permissionLink} onPress={requestCameraPermission}>
+                Grant access
+              </Text>
+            ) : (
+              'Enable it in your phone Settings.'
+            )}
+          </Text>
+        ) : null}
+        {micPermission && !micPermission.granted ? (
+          <Text style={styles.permissionNotice}>
+            Microphone access is required to go live.{' '}
+            {micPermission.canAskAgain ? (
+              <Text style={styles.permissionLink} onPress={requestMicPermission}>
+                Grant access
+              </Text>
+            ) : (
+              'Enable it in your phone Settings.'
+            )}
+          </Text>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.goLiveButton, (!cameraPermission?.granted || !micPermission?.granted) && styles.goLiveButtonDisabled]}
+          onPress={handleGoLive}
+          disabled={starting || !cameraPermission?.granted || !micPermission?.granted}
+          activeOpacity={0.85}
+        >
           <Text style={styles.goLiveLabel}>{starting ? 'Starting...' : 'Go Live'}</Text>
         </TouchableOpacity>
       </View>
@@ -215,9 +260,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 40,
   },
+  goLiveButtonDisabled: {
+    opacity: 0.5,
+  },
   goLiveLabel: {
     color: colors.text,
     fontSize: 16,
+    fontWeight: '700',
+  },
+  permissionNotice: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  permissionLink: {
+    color: colors.primary,
     fontWeight: '700',
   },
   broadcastContainer: {
