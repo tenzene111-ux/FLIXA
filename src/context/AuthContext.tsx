@@ -7,6 +7,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '../firebase/config';
+import { ensureUserProfile } from '../services/users';
 
 type AuthContextValue = {
   user: User | null;
@@ -26,6 +27,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setInitializing(false);
+      if (nextUser?.email) {
+        const username = nextUser.email.split('@')[0].toLowerCase();
+        ensureUserProfile(nextUser.uid, username).catch(() => {});
+      }
     });
     return unsubscribe;
   }, []);
@@ -38,7 +43,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await signInWithEmailAndPassword(auth, email, password);
       },
       signUp: async (email, password) => {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        const username = email.split('@')[0].toLowerCase();
+        await ensureUserProfile(credential.user.uid, username);
       },
       signOut: async () => {
         await firebaseSignOut(auth);

@@ -1,7 +1,6 @@
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   DocumentData,
   increment,
@@ -11,7 +10,6 @@ import {
   QuerySnapshot,
   runTransaction,
   serverTimestamp,
-  setDoc,
   Timestamp,
   where,
 } from 'firebase/firestore';
@@ -28,7 +26,6 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
     return {
       id: docSnap.id,
       uid: data.uid,
-      username: data.username,
       caption: data.caption ?? '',
       videoUrl: data.videoUrl,
       thumbnailUrl: data.thumbnailUrl,
@@ -78,7 +75,6 @@ async function uploadFile(localUri: string, storagePath: string, onProgress?: (p
 
 export async function createPost(params: {
   uid: string;
-  username: string;
   caption: string;
   videoUri: string;
   thumbnailUri: string;
@@ -99,7 +95,6 @@ export async function createPost(params: {
 
   await addDoc(collection(db, POSTS_COLLECTION), {
     uid: params.uid,
-    username: params.username,
     caption: params.caption,
     videoUrl,
     thumbnailUrl,

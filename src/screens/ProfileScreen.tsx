@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../hooks/useUserProfile';
 import { subscribeToUserPosts } from '../services/posts';
 import type { Post } from '../types/post';
+import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 2;
@@ -15,8 +19,11 @@ const THUMB_SIZE = (width - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const { user, signOut } = useAuth();
-  const displayName = user?.email ?? 'Flixa user';
+  const profile = useUserProfile(user?.uid);
+  const displayName = profile?.displayName ?? '...';
+  const username = profile?.username ?? '...';
   const [posts, setPosts] = useState<Post[]>([]);
 
   useEffect(() => {
@@ -30,7 +37,7 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerName} numberOfLines={1}>
-          {displayName}
+          @{username}
         </Text>
         <TouchableOpacity style={styles.headerAction} onPress={signOut}>
           <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
@@ -51,17 +58,27 @@ export default function ProfileScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
-                </View>
+                {profile?.photoURL ? (
+                  <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={styles.avatarInitial}>{username.charAt(0).toUpperCase()}</Text>
+                  </View>
+                )}
               </LinearGradient>
+
+              <Text style={styles.displayName}>{displayName}</Text>
 
               <View style={styles.statsRow}>
                 <Stat label="Videos" value={String(posts.length)} />
                 <Stat label="Likes" value={formatCount(totalLikes)} />
               </View>
 
-              <TouchableOpacity style={styles.editButton} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={styles.editButton}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('EditProfile')}
+              >
                 <Text style={styles.editButtonLabel}>Edit Profile</Text>
               </TouchableOpacity>
             </View>
@@ -152,10 +169,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
   avatarInitial: {
     color: colors.text,
     fontSize: 32,
     fontWeight: '700',
+  },
+  displayName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 12,
   },
   statsRow: {
     flexDirection: 'row',

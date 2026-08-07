@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import { subscribeToUserPosts } from '../services/posts';
+import { useUserProfile } from '../hooks/useUserProfile';
 import type { Post } from '../types/post';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
@@ -21,6 +22,7 @@ export default function UserProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const { params } = useRoute<Route & { key: string; name: 'UserProfile' }>();
+  const profile = useUserProfile(params.uid);
   const [posts, setPosts] = useState<Post[]>([]);
 
   useEffect(() => {
@@ -28,6 +30,8 @@ export default function UserProfileScreen() {
   }, [params.uid]);
 
   const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
+  const displayName = profile?.displayName ?? '...';
+  const username = profile?.username ?? '...';
 
   return (
     <View style={styles.container}>
@@ -43,7 +47,7 @@ export default function UserProfileScreen() {
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
               </TouchableOpacity>
               <Text style={styles.headerName} numberOfLines={1}>
-                {params.username}
+                @{username}
               </Text>
               <View style={styles.headerSpacer} />
             </View>
@@ -55,10 +59,16 @@ export default function UserProfileScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarInitial}>{params.username.charAt(0).toUpperCase()}</Text>
-                </View>
+                {profile?.photoURL ? (
+                  <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={styles.avatarInitial}>{username.charAt(0).toUpperCase()}</Text>
+                  </View>
+                )}
               </LinearGradient>
+
+              <Text style={styles.displayName}>{displayName}</Text>
 
               <View style={styles.statsRow}>
                 <Stat label="Videos" value={String(posts.length)} />
@@ -151,10 +161,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
   avatarInitial: {
     color: colors.text,
     fontSize: 32,
     fontWeight: '700',
+  },
+  displayName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 12,
   },
   statsRow: {
     flexDirection: 'row',

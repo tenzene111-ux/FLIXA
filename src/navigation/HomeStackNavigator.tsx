@@ -5,7 +5,7 @@ import UserProfileScreen from '../screens/UserProfileScreen';
 
 export type HomeStackParamList = {
   Feed: undefined;
-  UserProfile: { uid: string; username: string };
+  UserProfile: { uid: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();

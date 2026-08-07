@@ -1,11 +1,12 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import HomeStackNavigator from './HomeStackNavigator';
 import UploadScreen from '../screens/UploadScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
 
 export type MainTabParamList = {
@@ -21,7 +22,11 @@ const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   Profile: 'person',
 };
 
+const BASE_BAR_HEIGHT = 56;
+
 export default function MainTabNavigator() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -32,7 +37,9 @@ export default function MainTabNavigator() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 60,
+          height: BASE_BAR_HEIGHT + insets.bottom,
+          paddingTop: 10,
+          paddingBottom: insets.bottom + 6,
         },
         tabBarIcon: ({ color, focused }) => {
           if (route.name === 'Upload') {
@@ -44,7 +51,7 @@ export default function MainTabNavigator() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="add" size={28} color={colors.text} />
+                  <Ionicons name="add" size={30} color={colors.text} />
                 </LinearGradient>
               </View>
             );
@@ -52,7 +59,7 @@ export default function MainTabNavigator() {
           return (
             <Ionicons
               name={TAB_ICONS[route.name]}
-              size={26}
+              size={28}
               color={focused ? colors.text : color}
             />
           );
@@ -61,21 +68,21 @@ export default function MainTabNavigator() {
     >
       <Tab.Screen name="Home" component={HomeStackNavigator} />
       <Tab.Screen name="Upload" component={UploadScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileStackNavigator} />
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
   centerButtonWrap: {
-    top: -18,
+    top: -20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   centerButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.pink,

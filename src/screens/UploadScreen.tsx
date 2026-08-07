@@ -86,7 +86,6 @@ export default function UploadScreen() {
     try {
       await createPost({
         uid: user.uid,
-        username: user.email ?? 'flixa user',
         caption: caption.trim(),
         videoUri: selection.videoUri,
         thumbnailUri: selection.thumbnailUri,

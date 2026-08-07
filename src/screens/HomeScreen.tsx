@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import colors from '../theme/colors';
@@ -19,14 +20,14 @@ import { subscribeToFeed } from '../services/posts';
 import type { Post } from '../types/post';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
-const { height } = Dimensions.get('window');
-const TAB_BAR_HEIGHT = 60;
-const ITEM_HEIGHT = height - TAB_BAR_HEIGHT;
+const { height: windowHeight } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const isFocused = useIsFocused();
+  const tabBarHeight = useBottomTabBarHeight();
+  const itemHeight = windowHeight - tabBarHeight;
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,10 +57,11 @@ export default function HomeScreen() {
       <VideoCard
         post={item}
         isActive={isFocused && item.id === activeId}
-        onPressAuthor={() => navigation.navigate('UserProfile', { uid: item.uid, username: item.username })}
+        height={itemHeight}
+        onPressAuthor={() => navigation.navigate('UserProfile', { uid: item.uid })}
       />
     ),
-    [activeId, isFocused, navigation]
+    [activeId, isFocused, navigation, itemHeight]
   );
 
   return (
@@ -81,13 +83,13 @@ export default function HomeScreen() {
           renderItem={renderItem}
           pagingEnabled
           showsVerticalScrollIndicator={false}
-          snapToInterval={ITEM_HEIGHT}
+          snapToInterval={itemHeight}
           decelerationRate="fast"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           getItemLayout={(_, index) => ({
-            length: ITEM_HEIGHT,
-            offset: ITEM_HEIGHT * index,
+            length: itemHeight,
+            offset: itemHeight * index,
             index,
           })}
         />

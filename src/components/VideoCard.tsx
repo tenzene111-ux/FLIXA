@@ -5,20 +5,22 @@ import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../hooks/useUserProfile';
 import { subscribeToLikeState, toggleLike } from '../services/posts';
 import type { Post } from '../types/post';
 
-const { width, height } = Dimensions.get('window');
-const TAB_BAR_HEIGHT = 60;
+const { width } = Dimensions.get('window');
 
 type Props = {
   post: Post;
   isActive: boolean;
+  height: number;
   onPressAuthor: () => void;
 };
 
-export default function VideoCard({ post, isActive, onPressAuthor }: Props) {
+export default function VideoCard({ post, isActive, height, onPressAuthor }: Props) {
   const { user } = useAuth();
+  const author = useUserProfile(post.uid);
   const [liked, setLiked] = useState(false);
 
   const player = useVideoPlayer(post.videoUrl, (p) => {
@@ -60,8 +62,10 @@ export default function VideoCard({ post, isActive, onPressAuthor }: Props) {
     }
   };
 
+  const displayUsername = author?.username ?? '...';
+
   return (
-    <Pressable style={[styles.card, { width, height: height - TAB_BAR_HEIGHT }]} onPress={togglePlayback}>
+    <Pressable style={[styles.card, { width, height }]} onPress={togglePlayback}>
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -80,7 +84,11 @@ export default function VideoCard({ post, isActive, onPressAuthor }: Props) {
 
       <View style={styles.rightActions}>
         <Pressable onPress={onPressAuthor} style={styles.avatarPlaceholder} hitSlop={8}>
-          <Text style={styles.avatarInitial}>{post.username.charAt(0).toUpperCase()}</Text>
+          {author?.photoURL ? (
+            <Image source={{ uri: author.photoURL }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarInitial}>{displayUsername.charAt(0).toUpperCase()}</Text>
+          )}
         </Pressable>
 
         <Pressable onPress={handleLike} style={styles.actionItem} hitSlop={8}>
@@ -104,7 +112,7 @@ export default function VideoCard({ post, isActive, onPressAuthor }: Props) {
 
       <View style={styles.bottomInfo}>
         <Pressable onPress={onPressAuthor} hitSlop={8}>
-          <Text style={styles.username}>{post.username}</Text>
+          <Text style={styles.username}>@{displayUsername}</Text>
         </Pressable>
         {post.caption ? <Caption text={post.caption} /> : null}
       </View>
@@ -159,6 +167,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarInitial: {
     color: colors.text,
