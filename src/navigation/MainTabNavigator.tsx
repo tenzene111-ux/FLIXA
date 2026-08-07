@@ -57,7 +57,7 @@ export default function MainTabNavigator() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="add" size={28} color={colors.text} />
+                  <Ionicons name="add" size={22} color={colors.text} />
                 </LinearGradient>
               </View>
             );
@@ -83,20 +83,14 @@ export default function MainTabNavigator() {
 
 const styles = StyleSheet.create({
   centerButtonWrap: {
-    top: -20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   centerButton: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.pink,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
   },
 });
