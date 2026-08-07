@@ -1,4 +1,5 @@
 import type { VideoOverlay } from './post';
+import type { Poll } from './poll';
 
 export type Draft = {
   id: string;
@@ -9,5 +10,6 @@ export type Draft = {
   trimEnd: number | null;
   overlays: VideoOverlay[];
   musicTitle: string;
+  poll: Poll | null;
   createdAt: number;
 };

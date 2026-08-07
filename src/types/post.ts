@@ -1,3 +1,5 @@
+import type { Poll } from './poll';
+
 export type VideoOverlay = {
   id: string;
   kind: 'text' | 'sticker';
@@ -20,4 +22,5 @@ export type Post = {
   trimEnd: number | null;
   overlays: VideoOverlay[];
   musicTitle: string;
+  poll: Poll | null;
 };

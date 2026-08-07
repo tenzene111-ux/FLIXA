@@ -32,6 +32,14 @@ service cloud.firestore {
         allow delete: if isOwner(resource.data.uid);
         allow update: if false;
       }
+
+      // One vote doc per user (doc id = uid); no update allowed, so a vote
+      // can't be changed or double-cast once set.
+      match /pollVotes/{uid} {
+        allow read: if isSignedIn();
+        allow create: if isOwner(uid) && request.resource.data.optionId is string;
+        allow update, delete: if false;
+      }
     }
 
     // ---- Shared user profiles ----

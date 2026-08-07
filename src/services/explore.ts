@@ -107,5 +107,6 @@ export async function getTopPost(): Promise<Post | null> {
     trimEnd: data.trimEnd ?? null,
     overlays: data.overlays ?? [],
     musicTitle: data.musicTitle ?? '',
+    poll: data.poll ?? null,
   };
 }

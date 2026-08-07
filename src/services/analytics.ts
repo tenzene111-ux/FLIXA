@@ -10,7 +10,9 @@ export type AnalyticsEventType =
   | 'post_created'
   | 'follow'
   | 'save'
-  | 'unsave';
+  | 'unsave'
+  | 'gift_sent'
+  | 'poll_vote';
 
 export function logEvent(type: AnalyticsEventType, uid: string, meta: Record<string, unknown> = {}) {
   addDoc(collection(db, 'analytics_events'), {

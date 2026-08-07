@@ -10,7 +10,10 @@ import { incrementView, subscribeToLikeState, toggleLike } from '../services/pos
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
+import { spendCoins } from '../services/wallet';
+import { getErrorMessage } from '../utils/errors';
 import OverlayLayer from './OverlayLayer';
+import PollCard from './PollCard';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
@@ -32,6 +35,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const viewerProfile = useUserProfile(user?.uid);
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [sendingGift, setSendingGift] = useState(false);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
@@ -113,6 +117,24 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     if (!user) return;
     toggleSave(user.uid, post.id, saved).catch(() => {});
     logEvent(saved ? 'unsave' : 'save', user.uid, { postId: post.id });
+  };
+
+  const handleSendGift = () => {
+    if (!user || sendingGift) return;
+    if (user.uid === post.uid) {
+      Alert.alert("Can't gift your own video");
+      return;
+    }
+    setSendingGift(true);
+    spendCoins({ item: 'live_gift' })
+      .then(() => {
+        Alert.alert('Gift sent', 'You sent a gift for 500 coins.');
+        logEvent('gift_sent', user.uid, { postId: post.id });
+      })
+      .catch((error) => {
+        Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
+      })
+      .finally(() => setSendingGift(false));
   };
 
   const handleShare = () => {
@@ -258,10 +280,20 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={28} color={saved ? colors.primary : colors.text} />
         </Pressable>
 
+        <Pressable onPress={handleSendGift} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
+          <Ionicons name="gift-outline" size={28} color={colors.text} />
+        </Pressable>
+
         <Animated.View style={[styles.discSpin, { transform: [{ rotate: discSpin }] }]}>
           <Image source={{ uri: post.thumbnailUrl }} style={styles.discImage} />
         </Animated.View>
       </View>
+
+      {post.poll && isActive ? (
+        <View style={styles.pollWrap}>
+          <PollCard videoId={post.id} poll={post.poll} uid={user?.uid} />
+        </View>
+      ) : null}
 
       <View style={styles.bottomInfo}>
         <Pressable onPress={onPressAuthor} hitSlop={8}>
@@ -396,6 +428,11 @@ const styles = StyleSheet.create({
   discImage: {
     width: '100%',
     height: '100%',
+  },
+  pollWrap: {
+    paddingHorizontal: 16,
+    paddingRight: 90,
+    marginBottom: 12,
   },
   bottomInfo: {
     paddingHorizontal: 16,

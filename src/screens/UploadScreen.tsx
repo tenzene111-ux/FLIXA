@@ -30,6 +30,7 @@ import { getErrorMessage } from '../utils/errors';
 import { logEvent } from '../services/analytics';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import type { VideoOverlay } from '../types/post';
+import type { Poll } from '../types/poll';
 
 type Selection = {
   videoUri: string;
@@ -53,6 +54,8 @@ export default function UploadScreen() {
   const [trimEnd, setTrimEnd] = useState<number | null>(null);
   const [overlays, setOverlays] = useState<VideoOverlay[]>([]);
   const [musicTitle, setMusicTitle] = useState('');
+  const [poll, setPoll] = useState<Poll | null>(null);
+  const [pollDraft, setPollDraft] = useState<{ question: string; options: string[] } | null>(null);
   const [activePanel, setActivePanel] = useState<'trim' | 'sticker' | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ purpose: 'text' | 'music'; value: string } | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -94,6 +97,7 @@ export default function UploadScreen() {
       setTrimEnd(draft.trimEnd);
       setOverlays(draft.overlays);
       setMusicTitle(draft.musicTitle);
+      setPoll(draft.poll);
     });
   }, [user, route.params?.draftId]);
 
@@ -105,6 +109,7 @@ export default function UploadScreen() {
       setTrimEnd(null);
       setOverlays([]);
       setMusicTitle('');
+      setPoll(null);
     } catch (error) {
       const message = getErrorMessage(error, 'Please try a different clip.');
       Alert.alert("Couldn't process that video", message);
@@ -136,6 +141,7 @@ export default function UploadScreen() {
     setCaption('');
     setOverlays([]);
     setMusicTitle('');
+    setPoll(null);
   };
 
   const handleAddSticker = (emoji: string) => {
@@ -154,6 +160,40 @@ export default function UploadScreen() {
     setTextPrompt(null);
   };
 
+  const handlePollOptionChange = (index: number, value: string) => {
+    setPollDraft((prev) => {
+      if (!prev) return prev;
+      const options = [...prev.options];
+      options[index] = value;
+      return { ...prev, options };
+    });
+  };
+
+  const handleAddPollOption = () => {
+    setPollDraft((prev) => (prev && prev.options.length < 4 ? { ...prev, options: [...prev.options, ''] } : prev));
+  };
+
+  const handleRemovePollOption = (index: number) => {
+    setPollDraft((prev) => (prev && prev.options.length > 2 ? { ...prev, options: prev.options.filter((_, i) => i !== index) } : prev));
+  };
+
+  const handleSavePoll = () => {
+    if (!pollDraft) return;
+    const question = pollDraft.question.trim();
+    const options = pollDraft.options.map((text) => text.trim()).filter(Boolean);
+    if (!question || options.length < 2) {
+      Alert.alert('Poll needs a question and at least 2 options');
+      return;
+    }
+    setPoll({ question, options: options.map((text, index) => ({ id: `opt-${index}`, text })) });
+    setPollDraft(null);
+  };
+
+  const handleRemovePoll = () => {
+    setPoll(null);
+    setPollDraft(null);
+  };
+
   const handleSaveDraft = async () => {
     if (!selection || !user) return;
     setSavingDraft(true);
@@ -166,6 +206,7 @@ export default function UploadScreen() {
         trimEnd,
         overlays,
         musicTitle,
+        poll,
       });
       Alert.alert('Saved', 'Your video was saved to Drafts.');
       handleDiscard();
@@ -191,12 +232,14 @@ export default function UploadScreen() {
         trimEnd,
         overlays,
         musicTitle: musicTitle.trim(),
+        poll,
         onProgress: setProgress,
       });
       setSelection(null);
       setCaption('');
       setOverlays([]);
       setMusicTitle('');
+      setPoll(null);
       logEvent('post_created', user.uid);
       navigation.navigate('Home');
     } catch (error) {
@@ -257,8 +300,27 @@ export default function UploadScreen() {
             label="Music"
             onPress={() => setTextPrompt({ purpose: 'music', value: musicTitle })}
           />
+          <EditToolButton
+            icon="stats-chart-outline"
+            label="Poll"
+            onPress={() =>
+              setPollDraft({ question: poll?.question ?? '', options: poll ? poll.options.map((o) => o.text) : ['', ''] })
+            }
+          />
           <EditToolButton icon="bookmark-outline" label="Draft" onPress={handleSaveDraft} disabled={savingDraft} />
         </View>
+
+        {poll ? (
+          <TouchableOpacity
+            style={[styles.musicPill, styles.pollPill]}
+            onPress={() => setPollDraft({ question: poll.question, options: poll.options.map((o) => o.text) })}
+          >
+            <Ionicons name="stats-chart" size={13} color={colors.text} />
+            <Text style={styles.musicPillLabel} numberOfLines={1}>
+              {poll.question}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {musicTitle ? (
           <View style={styles.musicPill}>
@@ -338,6 +400,60 @@ export default function UploadScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!pollDraft} transparent animationType="slide" onRequestClose={() => setPollDraft(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Poll</Text>
+              <TouchableOpacity onPress={() => setPollDraft(null)} hitSlop={8}>
+                <Text style={styles.modalDone}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.pollForm}>
+              <TextInput
+                style={styles.promptInput}
+                placeholder="Ask a question..."
+                placeholderTextColor={colors.textDim}
+                value={pollDraft?.question ?? ''}
+                onChangeText={(value) => setPollDraft((prev) => (prev ? { ...prev, question: value } : prev))}
+              />
+              {pollDraft?.options.map((option, index) => (
+                <View key={index} style={styles.pollOptionRow}>
+                  <TextInput
+                    style={[styles.promptInput, styles.pollOptionInput]}
+                    placeholder={`Option ${index + 1}`}
+                    placeholderTextColor={colors.textDim}
+                    value={option}
+                    onChangeText={(value) => handlePollOptionChange(index, value)}
+                  />
+                  {pollDraft.options.length > 2 ? (
+                    <TouchableOpacity onPress={() => handleRemovePollOption(index)} hitSlop={8}>
+                      <Ionicons name="close-circle" size={20} color={colors.textDim} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ))}
+              {(pollDraft?.options.length ?? 0) < 4 ? (
+                <TouchableOpacity onPress={handleAddPollOption} style={styles.addOptionButton}>
+                  <Ionicons name="add" size={16} color={colors.primary} />
+                  <Text style={styles.addOptionLabel}>Add option</Text>
+                </TouchableOpacity>
+              ) : null}
+              <View style={styles.promptActions}>
+                {poll ? (
+                  <TouchableOpacity onPress={handleRemovePoll} style={styles.promptButton}>
+                    <Text style={[styles.promptButtonLabel, styles.removePollLabel]}>Remove poll</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity onPress={handleSavePoll} style={styles.promptButton}>
+                  <Text style={[styles.promptButtonLabel, styles.promptButtonPrimary]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </View>
       </Modal>
@@ -499,6 +615,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  pollPill: {
+    bottom: 56,
+  },
   captionBar: {
     padding: 16,
     backgroundColor: colors.surface,
@@ -605,5 +724,32 @@ const styles = StyleSheet.create({
   },
   promptButtonPrimary: {
     color: colors.primary,
+  },
+  pollForm: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 10,
+  },
+  pollOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pollOptionInput: {
+    flex: 1,
+  },
+  addOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  addOptionLabel: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  removePollLabel: {
+    color: colors.danger,
   },
 });
