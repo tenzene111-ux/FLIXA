@@ -30,6 +30,13 @@
           "cameraPermission": "Flixa needs access to your camera so you can record a video.",
           "microphonePermission": "Flixa needs access to your microphone to record audio with your video."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Flixa needs access to your camera so you can record a video.",
+          "microphonePermission": "Flixa needs access to your microphone to record audio with your video."
+        }
       ]
     ]
   }

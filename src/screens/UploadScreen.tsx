@@ -11,9 +11,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { createPost } from '../services/posts';
+import CameraCapture from '../components/CameraCapture';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
-
-const MAX_DURATION_SECONDS = 60;
 
 type Selection = {
   videoUri: string;
@@ -25,6 +24,7 @@ export default function UploadScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const { user } = useAuth();
 
+  const [showCamera, setShowCamera] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -39,24 +39,15 @@ export default function UploadScreen() {
     try {
       const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
       setSelection({ videoUri, thumbnailUri });
-    } catch {
-      Alert.alert("Couldn't process that video", 'Please try a different clip.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try a different clip.';
+      Alert.alert("Couldn't process that video", message);
     }
   };
 
-  const handleRecord = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Camera permission needed', 'Enable camera access in Settings to record a video.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['videos'],
-      videoMaxDuration: MAX_DURATION_SECONDS,
-    });
-    if (!result.canceled && result.assets[0]) {
-      await buildSelection(result.assets[0].uri);
-    }
+  const handleCameraCaptured = (videoUri: string) => {
+    setShowCamera(false);
+    buildSelection(videoUri);
   };
 
   const handlePickFromGallery = async () => {
@@ -94,12 +85,17 @@ export default function UploadScreen() {
       setSelection(null);
       setCaption('');
       navigation.navigate('Home');
-    } catch {
-      Alert.alert('Upload failed', 'Please check your connection and try again.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please check your connection and try again.';
+      Alert.alert('Upload failed', message);
     } finally {
       setUploading(false);
     }
   };
+
+  if (showCamera) {
+    return <CameraCapture onCaptured={handleCameraCaptured} onClose={() => setShowCamera(false)} />;
+  }
 
   if (!selection) {
     return (
@@ -108,7 +104,7 @@ export default function UploadScreen() {
         <Text style={styles.title}>Create a video</Text>
         <Text style={styles.subtitle}>Record something new or upload from your gallery</Text>
 
-        <TouchableOpacity onPress={handleRecord} activeOpacity={0.85} style={styles.primaryButtonWrap}>
+        <TouchableOpacity onPress={() => setShowCamera(true)} activeOpacity={0.85} style={styles.primaryButtonWrap}>
           <LinearGradient
             colors={colors.gradientButton}
             style={styles.primaryButton}
