@@ -24,10 +24,13 @@ import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
 import { sendGift } from '../services/wallet';
-import { subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
+import { subscribeToGiftLeaderboard, subscribeToLatestGift, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
+import GiftAnimationOverlay, { type GiftAnimationEvent } from './GiftAnimationOverlay';
+import GiftPicker from './GiftPicker';
 import OverlayLayer from './OverlayLayer';
 import PollCard from './PollCard';
+import { GIFT_BY_ID, type GiftDefinition } from '../types/gift';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
@@ -52,9 +55,10 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const [sendingGift, setSendingGift] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboard, setLeaderboard] = useState<GiftLeaderboardEntry[]>([]);
+  const [giftPickerVisible, setGiftPickerVisible] = useState(false);
+  const [giftEvent, setGiftEvent] = useState<GiftAnimationEvent | null>(null);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
-  const giftBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
   const discAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -112,6 +116,18 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     return subscribeToGiftLeaderboard('video', post.id, setLeaderboard);
   }, [showLeaderboard, post.id]);
 
+  // Plays the gift animation for whoever is watching this card right
+  // now, not just whoever sent it — only wired up while the card is
+  // actually active/on-screen.
+  useEffect(() => {
+    if (!isActive) return;
+    return subscribeToLatestGift('video', post.id, (event) => {
+      const gift = GIFT_BY_ID[event.giftId];
+      if (!gift) return;
+      setGiftEvent({ id: event.id, gift, fromUsername: event.fromUsername });
+    });
+  }, [isActive, post.id]);
+
   useEffect(() => {
     if (isPlaying) {
       discAnimationRef.current = Animated.loop(
@@ -143,27 +159,31 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     logEvent(saved ? 'unsave' : 'save', user.uid, { postId: post.id });
   };
 
-  const triggerGiftBurst = () => {
-    giftBurst.setValue(0);
-    Animated.sequence([
-      Animated.spring(giftBurst, { toValue: 1, useNativeDriver: true, friction: 4 }),
-      Animated.timing(giftBurst, { toValue: 0, duration: 300, delay: 500, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSendGift = () => {
-    if (!user || sendingGift || !viewerProfile) return;
+  const handleOpenGiftPicker = () => {
+    if (!user) return;
     if (user.uid === post.uid) {
       Alert.alert("Can't gift your own video");
       return;
     }
+    setGiftPickerVisible(true);
+  };
+
+  const handleSelectGift = (gift: GiftDefinition) => {
+    if (!user || sendingGift || !viewerProfile) return;
     setSendingGift(true);
-    // Payment (the coin debit) is confirmed by the callable resolving —
-    // the burst animation only plays after that, never before.
-    sendGift({ contextType: 'video', contextId: post.id, toUid: post.uid, fromUsername: viewerProfile.username })
+    setGiftPickerVisible(false);
+    // The animation itself is driven by the subscribeToLatestGift
+    // listener above (which fires for every viewer, sender included)
+    // once the write actually lands — not optimistically here.
+    sendGift({
+      contextType: 'video',
+      contextId: post.id,
+      toUid: post.uid,
+      fromUsername: viewerProfile.username,
+      giftId: gift.id,
+    })
       .then(() => {
-        triggerGiftBurst();
-        logEvent('gift_sent', user.uid, { postId: post.id });
+        logEvent('gift_sent', user.uid, { postId: post.id, giftId: gift.id });
       })
       .catch((error) => {
         Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
@@ -285,18 +305,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
         <Ionicons name="heart" size={110} color={colors.pink} />
       </Animated.View>
 
-      <Animated.View
-        style={[
-          styles.heartBurst,
-          {
-            opacity: giftBurst,
-            transform: [{ scale: giftBurst.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.3] }) }],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        <Ionicons name="gift" size={100} color={colors.primary} />
-      </Animated.View>
+      <GiftAnimationOverlay event={giftEvent} onDone={() => setGiftEvent(null)} />
 
       <TouchableMoreButton onPress={handleMoreOptions} />
 
@@ -327,7 +336,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={28} color={saved ? colors.primary : colors.text} />
         </Pressable>
 
-        <Pressable onPress={handleSendGift} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
+        <Pressable onPress={handleOpenGiftPicker} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
           <Ionicons name="gift-outline" size={28} color={colors.text} />
         </Pressable>
 
@@ -396,6 +405,14 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           </View>
         </View>
       </Modal>
+
+      <GiftPicker
+        visible={giftPickerVisible}
+        onClose={() => setGiftPickerVisible(false)}
+        onSelectGift={handleSelectGift}
+        sending={sendingGift}
+        recipientLabel={`@${displayUsername}`}
+      />
     </View>
   );
 }

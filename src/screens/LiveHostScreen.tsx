@@ -51,13 +51,15 @@ import {
 } from '../services/live';
 import { searchUsersByUsername } from '../services/explore';
 import { createBattleInviteNotification } from '../services/notifications';
-import { subscribeToBattleScores, subscribeToGiftLeaderboard } from '../services/gifts';
+import { subscribeToBattleScores, subscribeToGiftLeaderboard, subscribeToLatestGift } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
 import LiveBattleStage from '../components/LiveBattleStage';
 import LiveChatPanel from '../components/LiveChatPanel';
+import GiftAnimationOverlay, { type GiftAnimationEvent } from '../components/GiftAnimationOverlay';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
 import LiveStageGrid from '../components/LiveStageGrid';
+import { GIFT_BY_ID } from '../types/gift';
 import { LIVE_CATEGORIES, type LiveCategory, type LiveComment, type LiveQuestion, type LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
 import type { LiveCoHost, LiveGuestRequest } from '../types/liveGuest';
@@ -317,6 +319,7 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const [coHosts, setCoHosts] = useState<LiveCoHost[]>([]);
   const [battleScores, setBattleScores] = useState({ hostTotal: 0, opponentTotal: 0 });
   const [battleSecondsRemaining, setBattleSecondsRemaining] = useState(0);
+  const [giftEvent, setGiftEvent] = useState<GiftAnimationEvent | null>(null);
   const battleAutoAcceptedRef = useRef<string | null>(null);
   const battleEndedRef = useRef<string | null>(null);
 
@@ -362,6 +365,13 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
     }
     return subscribeToLivePollVotes(streamId, activePoll.id, setPollCounts);
   }, [streamId, activePoll?.id]);
+  useEffect(() => {
+    return subscribeToLatestGift('liveStream', streamId, (event) => {
+      const gift = GIFT_BY_ID[event.giftId];
+      if (!gift) return;
+      setGiftEvent({ id: event.id, gift, fromUsername: event.fromUsername });
+    });
+  }, [streamId]);
 
   // A challenged opponent "accepts" by calling requestToJoinAsGuest just
   // like any other guest (see services/live.ts) — this watches for that
@@ -588,6 +598,8 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
       ) : (
         <LiveStageGrid tracks={tracks} />
       )}
+
+      <GiftAnimationOverlay event={giftEvent} onDone={() => setGiftEvent(null)} />
 
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <View style={styles.liveBadge}>

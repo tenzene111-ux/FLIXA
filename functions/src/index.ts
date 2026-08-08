@@ -212,24 +212,56 @@ export const spendCoins = onCall<{ item: keyof typeof SPEND_CATALOG }>(async (re
 // diamond balance in the same transaction, then records the gift so a
 // leaderboard can be built from it (clients can only read the gifts
 // subcollection, never write it — every entry here is backed by a real
-// coin movement).
-const GIFT_COST = 500;
-const GIFT_DIAMONDS = 500; // 1:1 coins-to-diamonds; real platforms take a cut, this doesn't yet.
+// coin movement). Costs are looked up here, server-side, from giftId —
+// never trusted from the client — mirroring src/types/gift.ts on the
+// client, which is display-only.
+const GIFT_CATALOG: Record<string, { name: string; cost: number }> = {
+  blue_poppy: { name: 'Blue Poppy', cost: 5 },
+  butter_lamp: { name: 'Butter Lamp', cost: 10 },
+  prayer_flag: { name: 'Prayer Flag', cost: 20 },
+  prayer_wheel: { name: 'Prayer Wheel', cost: 30 },
+  white_scarf: { name: 'White Scarf', cost: 50 },
+  happiness_bell: { name: 'Happiness Bell', cost: 75 },
+  lucky_knot: { name: 'Lucky Knot', cost: 100 },
+  bamboo_arrow: { name: 'Bamboo Arrow', cost: 150 },
+  golden_bow: { name: 'Golden Bow', cost: 250 },
+  yak_caravan: { name: 'Yak Caravan', cost: 300 },
+  takin_spirit: { name: 'Takin Spirit', cost: 500 },
+  raven_guardian: { name: 'Raven Guardian', cost: 800 },
+  mini_dzong: { name: 'Mini Dzong', cost: 1000 },
+  dochula_blessing: { name: 'Dochula Blessing', cost: 1500 },
+  festival_mask_dance: { name: 'Festival Mask Dance', cost: 2000 },
+  punakha_fortress: { name: 'Punakha Fortress', cost: 3000 },
+  tigers_nest: { name: "Tiger's Nest", cost: 5000 },
+  royal_throne: { name: 'Royal Throne', cost: 8000 },
+  golden_dragon: { name: 'Golden Dragon', cost: 12000 },
+  himalayan_palace: { name: 'Himalayan Palace', cost: 20000 },
+  kingdom_crown: { name: 'Kingdom Crown', cost: 35000 },
+  dragon_emperor: { name: 'Dragon Emperor', cost: 50000 },
+  druk_kingdom: { name: 'Druk Kingdom', cost: 100000 },
+  golden_himalaya: { name: 'Golden Himalaya', cost: 250000 },
+  sky_dragon: { name: 'Sky Dragon', cost: 500000 },
+  eternal_bhutan: { name: 'Eternal Bhutan', cost: 750000 },
+  druk_universe: { name: 'Druk Universe', cost: 1000000 },
+};
 
 export const sendGift = onCall<{
   contextType: 'video' | 'liveStream';
   contextId: string;
   toUid: string;
   fromUsername: string;
+  giftId: string;
 }>(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
-  const { contextType, contextId, toUid, fromUsername } = request.data;
+  const { contextType, contextId, toUid, fromUsername, giftId } = request.data;
   const fromUid = request.auth.uid;
   if (!contextId || !toUid) throw new HttpsError('invalid-argument', 'Missing contextId or toUid.');
   if (contextType !== 'video' && contextType !== 'liveStream') {
     throw new HttpsError('invalid-argument', 'Unknown contextType.');
   }
   if (fromUid === toUid) throw new HttpsError('failed-precondition', "Can't gift yourself.");
+  const gift = GIFT_CATALOG[giftId];
+  if (!gift) throw new HttpsError('invalid-argument', 'Unknown giftId.');
 
   const collectionName = contextType === 'video' ? 'videos' : 'liveStreams';
   const senderWalletRef = db.doc(`wallets/${fromUid}`);
@@ -240,7 +272,7 @@ export const sendGift = onCall<{
   return db.runTransaction(async (tx) => {
     const senderSnap = await tx.get(senderWalletRef);
     const currentBalance = senderSnap.exists ? (senderSnap.data()?.balance as number) ?? 0 : 0;
-    const nextBalance = currentBalance - GIFT_COST;
+    const nextBalance = currentBalance - gift.cost;
     if (nextBalance < 0) {
       throw new HttpsError('failed-precondition', 'Insufficient balance.');
     }
@@ -249,13 +281,15 @@ export const sendGift = onCall<{
     const currentDiamonds = recipientSnap.exists ? (recipientSnap.data()?.diamonds as number) ?? 0 : 0;
 
     tx.set(senderWalletRef, { balance: nextBalance }, { merge: true });
-    tx.set(senderTxRef, { type: 'gift', label: 'Gift Sent', amount: -GIFT_COST, createdAt: Date.now() });
-    tx.set(recipientWalletRef, { diamonds: currentDiamonds + GIFT_DIAMONDS }, { merge: true });
+    tx.set(senderTxRef, { type: 'gift', label: `Sent ${gift.name}`, amount: -gift.cost, createdAt: Date.now() });
+    tx.set(recipientWalletRef, { diamonds: currentDiamonds + gift.cost }, { merge: true });
     tx.set(giftRef, {
       fromUid,
       fromUsername: fromUsername || 'Someone',
       toUid,
-      amount: GIFT_DIAMONDS,
+      giftId,
+      giftName: gift.name,
+      amount: gift.cost,
       createdAt: Date.now(),
     });
 
