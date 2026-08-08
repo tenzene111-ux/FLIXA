@@ -108,5 +108,8 @@ export async function getTopPost(): Promise<Post | null> {
     overlays: data.overlays ?? [],
     musicTitle: data.musicTitle ?? '',
     poll: data.poll ?? null,
+    privacy: data.privacy ?? 'everyone',
+    commentsSetting: data.commentsSetting ?? 'everyone',
+    allowDownloads: data.allowDownloads ?? true,
   };
 }

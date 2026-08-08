@@ -21,7 +21,7 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
 import { createLikeNotification } from './notifications';
-import type { Post, VideoOverlay } from '../types/post';
+import type { CommentsSetting, Post, PostPrivacy, VideoOverlay } from '../types/post';
 import type { Poll } from '../types/poll';
 
 const VIDEOS_COLLECTION = 'videos';
@@ -45,6 +45,9 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
       overlays: data.overlays ?? [],
       musicTitle: data.musicTitle ?? '',
       poll: data.poll ?? null,
+      privacy: data.privacy ?? 'everyone',
+      commentsSetting: data.commentsSetting ?? 'everyone',
+      allowDownloads: data.allowDownloads ?? true,
     };
   });
 }
@@ -116,6 +119,9 @@ export async function createPost(params: {
   overlays?: VideoOverlay[];
   musicTitle?: string;
   poll?: Poll | null;
+  privacy?: PostPrivacy;
+  commentsSetting?: CommentsSetting;
+  allowDownloads?: boolean;
   onProgress?: (pct: number) => void;
 }) {
   const timestamp = Date.now();
@@ -147,6 +153,54 @@ export async function createPost(params: {
     overlays: params.overlays ?? [],
     musicTitle: params.musicTitle ?? '',
     poll: params.poll ?? null,
+    privacy: params.privacy ?? 'everyone',
+    commentsSetting: params.commentsSetting ?? 'everyone',
+    allowDownloads: params.allowDownloads ?? true,
+    createdAt: serverTimestamp(),
+  });
+}
+
+// For videos that already went through the server-side ffmpeg pipeline
+// (functions/src/video.ts): the video file is already hosted in Storage
+// with a real download URL, so only the chosen cover image needs
+// uploading here — re-fetching and re-uploading the processed video would
+// just waste bandwidth and time.
+export async function createPostFromProcessedVideo(params: {
+  uid: string;
+  caption: string;
+  videoUrl: string;
+  thumbnailUri: string;
+  privacy?: PostPrivacy;
+  commentsSetting?: CommentsSetting;
+  allowDownloads?: boolean;
+  onProgress?: (pct: number) => void;
+}) {
+  const timestamp = Date.now();
+
+  const thumbnailUrl = await uploadFile(
+    params.thumbnailUri,
+    `thumbnails/${params.uid}/${timestamp}.jpg`,
+    'image/jpeg',
+    (pct) => params.onProgress?.(pct)
+  );
+
+  await addDoc(collection(db, VIDEOS_COLLECTION), {
+    uploaderId: params.uid,
+    caption: params.caption,
+    videoUrl: params.videoUrl,
+    thumbnailUrl,
+    likeCount: 0,
+    commentCount: 0,
+    shareCount: 0,
+    viewCount: 0,
+    trimStart: 0,
+    trimEnd: null,
+    overlays: [],
+    musicTitle: '',
+    poll: null,
+    privacy: params.privacy ?? 'everyone',
+    commentsSetting: params.commentsSetting ?? 'everyone',
+    allowDownloads: params.allowDownloads ?? true,
     createdAt: serverTimestamp(),
   });
 }

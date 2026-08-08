@@ -8,6 +8,9 @@ export type VideoOverlay = {
   y: number; // 0..1 fraction of video height
 };
 
+export type PostPrivacy = 'everyone' | 'followers' | 'friends' | 'onlyMe';
+export type CommentsSetting = 'everyone' | 'followers' | 'friends' | 'nobody';
+
 export type Post = {
   id: string;
   uid: string;
@@ -23,4 +26,7 @@ export type Post = {
   overlays: VideoOverlay[];
   musicTitle: string;
   poll: Poll | null;
+  privacy: PostPrivacy;
+  commentsSetting: CommentsSetting;
+  allowDownloads: boolean;
 };
