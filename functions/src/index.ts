@@ -8,6 +8,8 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 initializeApp();
 const db = getFirestore();
 
+export { onVideoJobCreate } from './video';
+
 // Wallets are server-authoritative (see firestore.rules), so the wallet
 // document itself has to be created server-side too, the moment a user
 // profile is created client-side.

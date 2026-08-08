@@ -117,6 +117,17 @@ service cloud.firestore {
       }
     }
 
+    // ---- Video processing jobs (server-authoritative once created — the
+    // onVideoJobCreate Cloud Function is the only writer of status/output
+    // fields; the client only ever creates the initial job with its edit
+    // decision list, then just reads it while polling for completion) ----
+    match /videoJobs/{jobId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'queued';
+      allow update, delete: if false;
+    }
+
     // ---- Live streaming ----
     match /liveStreams/{streamId} {
       allow read: if isSignedIn();

@@ -26,5 +26,30 @@ service firebase.storage {
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
+
+    // Raw, unprocessed clips a creator records/imports while editing —
+    // input to the onVideoJobCreate Cloud Function (see functions/src/video.ts).
+    match /rawClips/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 300 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    // Music/voiceover audio a creator attaches to an edit before it's
+    // processed into the final video.
+    match /soundUploads/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+    }
+
+    // Final rendered output of a video-processing job — written only by
+    // the Cloud Function (Admin SDK bypasses these rules entirely).
+    match /processedVideos/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
   }
 }
