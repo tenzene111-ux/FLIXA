@@ -215,34 +215,36 @@ export const spendCoins = onCall<{ item: keyof typeof SPEND_CATALOG }>(async (re
 // coin movement). Costs are looked up here, server-side, from giftId —
 // never trusted from the client — mirroring src/types/gift.ts on the
 // client, which is display-only.
+// Currency: 1 Coin = Nu. 1 (Bhutanese Ngultrum). Costs are capped at
+// 100,000 coins (Nu. 100,000) for the top gift — mirrors src/types/gift.ts.
 const GIFT_CATALOG: Record<string, { name: string; cost: number }> = {
   blue_poppy: { name: 'Blue Poppy', cost: 5 },
   butter_lamp: { name: 'Butter Lamp', cost: 10 },
-  prayer_flag: { name: 'Prayer Flag', cost: 20 },
-  prayer_wheel: { name: 'Prayer Wheel', cost: 30 },
-  white_scarf: { name: 'White Scarf', cost: 50 },
-  happiness_bell: { name: 'Happiness Bell', cost: 75 },
-  lucky_knot: { name: 'Lucky Knot', cost: 100 },
-  bamboo_arrow: { name: 'Bamboo Arrow', cost: 150 },
-  golden_bow: { name: 'Golden Bow', cost: 250 },
-  yak_caravan: { name: 'Yak Caravan', cost: 300 },
-  takin_spirit: { name: 'Takin Spirit', cost: 500 },
-  raven_guardian: { name: 'Raven Guardian', cost: 800 },
-  mini_dzong: { name: 'Mini Dzong', cost: 1000 },
-  dochula_blessing: { name: 'Dochula Blessing', cost: 1500 },
-  festival_mask_dance: { name: 'Festival Mask Dance', cost: 2000 },
-  punakha_fortress: { name: 'Punakha Fortress', cost: 3000 },
-  tigers_nest: { name: "Tiger's Nest", cost: 5000 },
-  royal_throne: { name: 'Royal Throne', cost: 8000 },
-  golden_dragon: { name: 'Golden Dragon', cost: 12000 },
-  himalayan_palace: { name: 'Himalayan Palace', cost: 20000 },
-  kingdom_crown: { name: 'Kingdom Crown', cost: 35000 },
-  dragon_emperor: { name: 'Dragon Emperor', cost: 50000 },
-  druk_kingdom: { name: 'Druk Kingdom', cost: 100000 },
-  golden_himalaya: { name: 'Golden Himalaya', cost: 250000 },
-  sky_dragon: { name: 'Sky Dragon', cost: 500000 },
-  eternal_bhutan: { name: 'Eternal Bhutan', cost: 750000 },
-  druk_universe: { name: 'Druk Universe', cost: 1000000 },
+  prayer_flag: { name: 'Prayer Flag', cost: 15 },
+  prayer_wheel: { name: 'Prayer Wheel', cost: 20 },
+  white_scarf: { name: 'White Scarf', cost: 30 },
+  happiness_bell: { name: 'Happiness Bell', cost: 40 },
+  lucky_knot: { name: 'Lucky Knot', cost: 50 },
+  bamboo_arrow: { name: 'Bamboo Arrow', cost: 75 },
+  golden_bow: { name: 'Golden Bow', cost: 120 },
+  yak_caravan: { name: 'Yak Caravan', cost: 180 },
+  takin_spirit: { name: 'Takin Spirit', cost: 250 },
+  raven_guardian: { name: 'Raven Guardian', cost: 350 },
+  mini_dzong: { name: 'Mini Dzong', cost: 500 },
+  dochula_blessing: { name: 'Dochula Blessing', cost: 750 },
+  festival_mask_dance: { name: 'Festival Mask Dance', cost: 1000 },
+  punakha_fortress: { name: 'Punakha Fortress', cost: 1500 },
+  tigers_nest: { name: "Tiger's Nest", cost: 2000 },
+  royal_throne: { name: 'Royal Throne', cost: 3000 },
+  golden_dragon: { name: 'Golden Dragon', cost: 5000 },
+  himalayan_palace: { name: 'Himalayan Palace', cost: 8000 },
+  kingdom_crown: { name: 'Kingdom Crown', cost: 12000 },
+  dragon_emperor: { name: 'Dragon Emperor', cost: 18000 },
+  druk_kingdom: { name: 'Druk Kingdom', cost: 25000 },
+  golden_himalaya: { name: 'Golden Himalaya', cost: 40000 },
+  sky_dragon: { name: 'Sky Dragon', cost: 55000 },
+  eternal_bhutan: { name: 'Eternal Bhutan', cost: 75000 },
+  druk_universe: { name: 'Druk Universe', cost: 100000 },
 };
 
 export const sendGift = onCall<{
@@ -298,8 +300,10 @@ export const sendGift = onCall<{
 });
 
 // Maps App Store / Play Console product IDs to the coin amount they grant.
-// Configure matching products with these IDs in App Store Connect and the
-// Play Console, or edit this map to match the IDs you create there.
+// 1 Coin = Nu. 1 (Bhutanese Ngultrum), so e.g. 'com.flixa.coins.1000' should
+// be priced at Nu. 1,000 in App Store Connect / Play Console. Configure
+// matching products with these IDs there, or edit this map to match the
+// IDs you create there.
 const TOPUP_PRODUCTS: Record<string, number> = {
   'com.flixa.coins.1000': 1000,
   'com.flixa.coins.5000': 5000,

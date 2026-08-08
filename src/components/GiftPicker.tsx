@@ -3,6 +3,7 @@ import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity,
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { GIFT_CATALOG, GIFT_TIERS, type GiftDefinition, type GiftTier } from '../types/gift';
+import { formatNgultrum } from '../utils/currency';
 
 type Props = {
   visible: boolean;
@@ -17,10 +18,14 @@ export default function GiftPicker({ visible, onClose, onSelectGift, sending, re
   const giftsForTier = GIFT_CATALOG.filter((gift) => gift.tier === activeTier);
 
   const handlePress = (gift: GiftDefinition) => {
-    Alert.alert(`Send ${gift.emoji} ${gift.name}?`, `${gift.cost.toLocaleString()} coins to ${recipientLabel}`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Send', onPress: () => onSelectGift(gift) },
-    ]);
+    Alert.alert(
+      `Send ${gift.emoji} ${gift.name}?`,
+      `${gift.cost.toLocaleString()} coins (${formatNgultrum(gift.cost)}) to ${recipientLabel}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Send', onPress: () => onSelectGift(gift) },
+      ]
+    );
   };
 
   return (
@@ -62,6 +67,7 @@ export default function GiftPicker({ visible, onClose, onSelectGift, sending, re
                   <Ionicons name="logo-bitcoin" size={12} color={colors.textMuted} />
                   <Text style={styles.giftCost}>{item.cost.toLocaleString()}</Text>
                 </View>
+                <Text style={styles.giftCostNgultrum}>{formatNgultrum(item.cost)}</Text>
               </TouchableOpacity>
             )}
           />
@@ -162,5 +168,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: '700',
+  },
+  giftCostNgultrum: {
+    color: colors.textDim,
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

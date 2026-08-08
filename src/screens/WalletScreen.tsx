@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeToDiamondBalance, subscribeToWalletBalance, subscribeToWalletTransactions } from '../services/wallet';
 import type { WalletTransaction } from '../types/wallet';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
+import { formatNgultrum } from '../utils/currency';
 
 const TRANSACTION_ICONS: Record<WalletTransaction['type'], keyof typeof Ionicons.glyphMap> = {
   topup: 'add-circle-outline',
@@ -66,6 +67,7 @@ export default function WalletScreen() {
           <Ionicons name="logo-bitcoin" size={26} color={colors.text} />
           <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
         </View>
+        <Text style={styles.balanceNgultrum}>≈ {formatNgultrum(balance)}</Text>
         <TouchableOpacity style={styles.topUpButton} onPress={handleTopUp} activeOpacity={0.85}>
           <Text style={styles.topUpLabel}>Top Up</Text>
         </TouchableOpacity>
@@ -144,6 +146,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 30,
     fontWeight: '800',
+  },
+  balanceNgultrum: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 16,
   },
   topUpButton: {
     backgroundColor: 'rgba(255,255,255,0.2)',
