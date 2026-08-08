@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Notification } from '../types/notification';
 
@@ -108,4 +108,13 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
 
 export async function markNotificationRead(uid: string, notificationId: string) {
   await updateDoc(doc(db, 'users', uid, 'notifications', notificationId), { read: true });
+}
+
+export async function markAllNotificationsRead(uid: string) {
+  const unreadQuery = query(notificationsRef(uid), where('read', '==', false));
+  const snapshot = await getDocs(unreadQuery);
+  if (snapshot.empty) return;
+  const batch = writeBatch(db);
+  snapshot.docs.forEach((docSnap) => batch.update(docSnap.ref, { read: true }));
+  await batch.commit();
 }

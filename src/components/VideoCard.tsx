@@ -30,6 +30,7 @@ import GiftAnimationOverlay, { type GiftAnimationEvent } from './GiftAnimationOv
 import GiftPicker from './GiftPicker';
 import OverlayLayer from './OverlayLayer';
 import PollCard from './PollCard';
+import SendToSheet from './SendToSheet';
 import { GIFT_BY_ID, type GiftDefinition } from '../types/gift';
 import type { Post } from '../types/post';
 
@@ -57,6 +58,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const [leaderboard, setLeaderboard] = useState<GiftLeaderboardEntry[]>([]);
   const [giftPickerVisible, setGiftPickerVisible] = useState(false);
   const [giftEvent, setGiftEvent] = useState<GiftAnimationEvent | null>(null);
+  const [sendToVisible, setSendToVisible] = useState(false);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
@@ -227,13 +229,21 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
       .finally(() => setSendingGift(false));
   };
 
-  const handleShare = () => {
+  const handleShareExternally = () => {
     Share.share({
       message: post.caption ? `${post.caption}\n${post.videoUrl}` : post.videoUrl,
       url: post.videoUrl,
     }).catch(() => {});
     incrementShare(post.id);
     if (user) logEvent('share', user.uid, { postId: post.id });
+  };
+
+  const handleSharePress = () => {
+    Alert.alert('Share', undefined, [
+      { text: 'Send to friend', onPress: () => setSendToVisible(true) },
+      { text: 'Share externally', onPress: handleShareExternally },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const triggerHeartBurst = () => {
@@ -365,7 +375,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           <Text style={styles.actionLabel}>{post.commentsCount}</Text>
         </Pressable>
 
-        <Pressable onPress={handleShare} style={styles.actionItem} hitSlop={8}>
+        <Pressable onPress={handleSharePress} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="arrow-redo" size={30} color={colors.text} />
         </Pressable>
 
@@ -450,6 +460,15 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
         sending={sendingGift}
         recipientLabel={`@${displayUsername}`}
       />
+
+      {user ? (
+        <SendToSheet
+          visible={sendToVisible}
+          onClose={() => setSendToVisible(false)}
+          post={{ id: post.id, thumbnailUrl: post.thumbnailUrl, caption: post.caption }}
+          senderUid={user.uid}
+        />
+      ) : null}
     </View>
   );
 }

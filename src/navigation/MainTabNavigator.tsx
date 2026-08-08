@@ -11,6 +11,7 @@ import UploadScreen from '../screens/UploadScreen';
 import InboxStackNavigator from './InboxStackNavigator';
 import ProfileStackNavigator from './ProfileStackNavigator';
 import colors from '../theme/colors';
+import { useUnreadInboxCount } from '../hooks/useUnreadInboxCount';
 
 export type MainTabParamList = {
   Home: NavigatorScreenParams<HomeStackParamList> | undefined;
@@ -33,6 +34,7 @@ const BASE_BAR_HEIGHT = 56;
 
 export default function MainTabNavigator() {
   const insets = useSafeAreaInsets();
+  const unreadInboxCount = useUnreadInboxCount();
 
   return (
     <Tab.Navigator
@@ -76,7 +78,14 @@ export default function MainTabNavigator() {
       <Tab.Screen name="Home" component={HomeStackNavigator} />
       <Tab.Screen name="Explore" component={ExploreStackNavigator} />
       <Tab.Screen name="Upload" component={UploadScreen} />
-      <Tab.Screen name="Inbox" component={InboxStackNavigator} />
+      <Tab.Screen
+        name="Inbox"
+        component={InboxStackNavigator}
+        options={{
+          tabBarBadge: unreadInboxCount > 0 ? (unreadInboxCount > 99 ? '99+' : unreadInboxCount) : undefined,
+          tabBarBadgeStyle: styles.tabBarBadge,
+        }}
+      />
       <Tab.Screen name="Profile" component={ProfileStackNavigator} />
     </Tab.Navigator>
   );
@@ -93,5 +102,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabBarBadge: {
+    backgroundColor: colors.pink,
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
