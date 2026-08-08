@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -19,34 +17,43 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { AudioSession, isTrackReference, LiveKitRoom, useTracks, VideoTrack } from '@livekit/react-native';
+import { AudioSession, LiveKitRoom, useLocalParticipant, useTracks } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import {
+  acceptGuestRequest,
   createLivePoll,
   createLiveStream,
   endLivePoll,
   endLiveStream,
   getLiveKitToken,
-  sendLiveComment,
+  rejectGuestRequest,
+  removeLiveGuest,
   setHighlightedQuestion,
   setLivePinnedMessage,
   subscribeToActiveLivePoll,
+  subscribeToBlockedUsers,
+  subscribeToCoHosts,
   subscribeToLiveComments,
   subscribeToLiveStream,
   subscribeToLivePollVotes,
+  subscribeToModerators,
+  subscribeToPendingGuestRequests,
   subscribeToQuestions,
   subscribeToViewerCount,
   uploadLiveCover,
 } from '../services/live';
 import { subscribeToGiftLeaderboard } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
+import LiveChatPanel from '../components/LiveChatPanel';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
+import LiveStageGrid from '../components/LiveStageGrid';
 import { LIVE_CATEGORIES, type LiveCategory, type LiveComment, type LiveQuestion, type LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
+import type { LiveCoHost, LiveGuestRequest } from '../types/liveGuest';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 export default function LiveHostScreen() {
@@ -282,16 +289,20 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const { user } = useAuth();
   const profile = useUserProfile(user?.uid);
   const tracks = useTracks([Track.Source.Camera]);
-  const localTrack = tracks[0];
+  const { localParticipant } = useLocalParticipant();
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
   const [stream, setStream] = useState<LiveStream | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [comments, setComments] = useState<LiveComment[]>([]);
-  const [chatText, setChatText] = useState('');
   const [raisedDiamonds, setRaisedDiamonds] = useState(0);
   const [activePoll, setActivePoll] = useState<LivePoll | null>(null);
   const [pollCounts, setPollCounts] = useState<Record<string, number>>({});
   const [questions, setQuestions] = useState<LiveQuestion[]>([]);
+  const [moderatorUids, setModeratorUids] = useState<Set<string>>(new Set());
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
+  const [guestRequests, setGuestRequests] = useState<LiveGuestRequest[]>([]);
+  const [coHosts, setCoHosts] = useState<LiveCoHost[]>([]);
 
   const [pinnedModalVisible, setPinnedModalVisible] = useState(false);
   const [pinnedDraft, setPinnedDraft] = useState('');
@@ -299,11 +310,22 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [qaModalVisible, setQaModalVisible] = useState(false);
+  const [guestsModalVisible, setGuestsModalVisible] = useState(false);
 
   useEffect(() => subscribeToLiveStream(streamId, setStream), [streamId]);
   useEffect(() => subscribeToViewerCount(streamId, setViewerCount), [streamId]);
   useEffect(() => subscribeToLiveComments(streamId, setComments), [streamId]);
   useEffect(() => subscribeToQuestions(streamId, setQuestions), [streamId]);
+  useEffect(
+    () => subscribeToModerators(streamId, (moderators) => setModeratorUids(new Set(moderators.map((m) => m.uid)))),
+    [streamId]
+  );
+  useEffect(
+    () => subscribeToBlockedUsers(streamId, (blocked) => setBlockedUids(new Set(blocked.map((b) => b.uid)))),
+    [streamId]
+  );
+  useEffect(() => subscribeToPendingGuestRequests(streamId, setGuestRequests), [streamId]);
+  useEffect(() => subscribeToCoHosts(streamId, setCoHosts), [streamId]);
   useEffect(
     () =>
       subscribeToGiftLeaderboard('liveStream', streamId, (entries) =>
@@ -326,10 +348,33 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   );
   const pollTotalVotes = Object.values(pollCounts).reduce((sum, count) => sum + count, 0);
 
-  const handleSendChat = () => {
-    if (!user || !profile || !chatText.trim()) return;
-    sendLiveComment(streamId, user.uid, profile.username, chatText).catch(() => {});
-    setChatText('');
+  const handleFlipCamera = async () => {
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    const videoTrack = publication?.videoTrack;
+    if (!videoTrack) return;
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    try {
+      await videoTrack.restartTrack({ facingMode: next });
+      setFacingMode(next);
+    } catch {
+      // Device may not have a second camera — no-op.
+    }
+  };
+
+  const handleAcceptGuest = (request: LiveGuestRequest) => {
+    acceptGuestRequest(streamId, request.uid, request.username).catch((error) =>
+      Alert.alert("Couldn't accept request", getErrorMessage(error, 'Please try again.'))
+    );
+  };
+
+  const handleRejectGuest = (request: LiveGuestRequest) => {
+    rejectGuestRequest(streamId, request.uid).catch(() => {});
+  };
+
+  const handleRemoveCoHost = (coHost: LiveCoHost) => {
+    removeLiveGuest({ roomName: streamId, uid: coHost.uid }).catch((error) =>
+      Alert.alert("Couldn't remove guest", getErrorMessage(error, 'Please try again.'))
+    );
   };
 
   const openPinnedModal = () => {
@@ -388,11 +433,7 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
 
   return (
     <View style={styles.broadcastContainer}>
-      {localTrack && isTrackReference(localTrack) ? (
-        <VideoTrack trackRef={localTrack} style={StyleSheet.absoluteFillObject} />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, styles.cameraPlaceholder]} />
-      )}
+      <LiveStageGrid tracks={tracks} />
 
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <View style={styles.liveBadge}>
@@ -406,6 +447,9 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
           <Ionicons name="heart" size={14} color={colors.pink} />
           <Text style={styles.viewerBadgeLabel}>{stream?.likeCount ?? 0}</Text>
         </View>
+        <TouchableOpacity onPress={handleFlipCamera} style={styles.flipButton} hitSlop={8}>
+          <Ionicons name="camera-reverse-outline" size={20} color={colors.text} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={onEnd} style={styles.endButton}>
           <Text style={styles.endButtonLabel}>End</Text>
         </TouchableOpacity>
@@ -425,6 +469,14 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
       </View>
 
       <View style={[styles.rightActions, { bottom: insets.bottom + 200 }]}>
+        <TouchableOpacity onPress={() => setGuestsModalVisible(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="people-outline" size={26} color={colors.text} />
+          {guestRequests.length > 0 ? (
+            <View style={styles.badgeDot}>
+              <Text style={styles.badgeDotLabel}>{guestRequests.length}</Text>
+            </View>
+          ) : null}
+        </TouchableOpacity>
         <TouchableOpacity onPress={openPinnedModal} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="pin-outline" size={26} color={colors.text} />
         </TouchableOpacity>
@@ -441,34 +493,69 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={[styles.chatWrap, { paddingBottom: insets.bottom + 12 }]}
-      >
-        <FlatList
-          data={comments.slice(-30)}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Text style={styles.chatLine}>
-              <Text style={styles.chatUsername}>{item.username}: </Text>
-              {item.text}
-            </Text>
-          )}
-          style={styles.chatList}
-        />
-        <View style={styles.chatInputRow}>
-          <TextInput
-            style={styles.chatInput}
-            placeholder="Say something..."
-            placeholderTextColor={colors.textDim}
-            value={chatText}
-            onChangeText={setChatText}
-          />
-          <TouchableOpacity onPress={handleSendChat} hitSlop={8}>
-            <Ionicons name="send" size={20} color={colors.primary} />
-          </TouchableOpacity>
+      <LiveChatPanel
+        streamId={streamId}
+        myUid={user?.uid}
+        myUsername={profile?.username}
+        comments={comments}
+        allowComments
+        canModerate
+        canManageModerators
+        moderatorUids={moderatorUids}
+        blockedUids={blockedUids}
+        iAmBlocked={false}
+        bottomInset={insets.bottom}
+      />
+
+      <Modal visible={guestsModalVisible} transparent animationType="slide" onRequestClose={() => setGuestsModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Guests</Text>
+              <TouchableOpacity onPress={() => setGuestsModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody} contentContainerStyle={styles.guestsScrollContent}>
+              {guestRequests.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>Requests to join</Text>
+                  {guestRequests.map((request) => (
+                    <View key={request.uid} style={styles.guestRow}>
+                      <Text style={styles.guestName} numberOfLines={1}>
+                        @{request.username}
+                      </Text>
+                      <View style={styles.guestActions}>
+                        <TouchableOpacity onPress={() => handleRejectGuest(request)} hitSlop={8}>
+                          <Ionicons name="close-circle" size={26} color={colors.textMuted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleAcceptGuest(request)} hitSlop={8}>
+                          <Ionicons name="checkmark-circle" size={26} color={colors.success} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </>
+              ) : null}
+              <Text style={styles.sectionLabel}>On stage</Text>
+              {coHosts.length === 0 ? (
+                <Text style={styles.leaderboardEmpty}>No guests on stage</Text>
+              ) : (
+                coHosts.map((coHost) => (
+                  <View key={coHost.uid} style={styles.guestRow}>
+                    <Text style={styles.guestName} numberOfLines={1}>
+                      @{coHost.username}
+                    </Text>
+                    <TouchableOpacity onPress={() => handleRemoveCoHost(coHost)} hitSlop={8}>
+                      <Text style={styles.removeGuestLabel}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
         </View>
-      </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={pinnedModalVisible} transparent animationType="slide" onRequestClose={() => setPinnedModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -780,8 +867,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  endButton: {
+  flipButton: {
     marginLeft: 'auto',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 16,
+    padding: 6,
+  },
+  endButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -833,42 +925,35 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
   },
-  chatWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '40%',
+  guestsScrollContent: {
+    paddingBottom: 16,
   },
-  chatList: {
-    paddingHorizontal: 16,
-  },
-  chatLine: {
-    color: colors.text,
-    fontSize: 13,
-    marginBottom: 6,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  chatUsername: {
-    fontWeight: '700',
-  },
-  chatInputRow: {
+  guestRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
   },
-  chatInput: {
-    flex: 1,
+  guestName: {
     color: colors.text,
     fontSize: 14,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  guestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  removeGuestLabel: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,

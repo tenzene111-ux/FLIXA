@@ -133,10 +133,20 @@ service cloud.firestore {
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
       );
 
+      // A comment can be removed by its author, the host, or a moderator
+      // (moderator status is just membership in the moderators
+      // subcollection below — checked with get(), same pattern already
+      // used for the host-only poll/question rules). A blocked viewer
+      // can't post at all.
       match /comments/{commentId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if false;
+        allow create: if isSignedIn()
+          && request.resource.data.uid == request.auth.uid
+          && !exists(/databases/$(database)/documents/liveStreams/$(streamId)/blockedUsers/$(request.auth.uid));
+        allow delete: if isOwner(resource.data.uid)
+          || isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid)
+          || exists(/databases/$(database)/documents/liveStreams/$(streamId)/moderators/$(request.auth.uid));
+        allow update: if false;
       }
 
       // Presence: each viewer owns exactly one doc (id = uid), created on
@@ -145,6 +155,48 @@ service cloud.firestore {
       match /viewers/{uid} {
         allow read: if isSignedIn();
         allow write: if isOwner(uid);
+      }
+
+      // Moderators are appointed/removed by the host only; membership here
+      // is what the comments/blockedUsers rules above check with get().
+      match /moderators/{uid} {
+        allow read: if isSignedIn();
+        allow create, delete: if isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+        allow update: if false;
+      }
+
+      // A blocked viewer can still watch, just can't post comments (see
+      // the comments rule above) — host or any moderator can block/unblock.
+      match /blockedUsers/{uid} {
+        allow read: if isSignedIn();
+        allow create, delete: if isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid)
+          || exists(/databases/$(database)/documents/liveStreams/$(streamId)/moderators/$(request.auth.uid));
+        allow update: if false;
+      }
+
+      // A viewer requests to go on-stage as a guest by creating their own
+      // pending doc; only the host may accept/reject it (status is the
+      // only field they may change). The requester or the host can cancel
+      // it outright.
+      match /guestRequests/{uid} {
+        allow read: if isSignedIn();
+        allow create: if isOwner(uid) && request.resource.data.status == 'pending';
+        allow update: if isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if isOwner(uid)
+          || isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+      }
+
+      // Co-hosts are added only by the host accepting a guest request
+      // (this is also what getLiveKitToken checks server-side before
+      // minting a publish-capable token — see functions/src/index.ts). A
+      // co-host can remove themselves; the host can remove anyone.
+      match /coHosts/{uid} {
+        allow read: if isSignedIn();
+        allow create: if isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+        allow delete: if isOwner(uid)
+          || isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+        allow update: if false;
       }
 
       // Same pattern as videos/{id}/gifts: only the sendGift Cloud

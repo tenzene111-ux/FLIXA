@@ -3,7 +3,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onDocumentCreated, onDocumentDeleted } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 
 initializeApp();
 const db = getFirestore();
@@ -226,12 +226,60 @@ export const getLiveKitToken = onCall<{ roomName: string; canPublish: boolean }>
     const { roomName, canPublish } = request.data;
     if (!roomName) throw new HttpsError('invalid-argument', 'Missing roomName.');
 
+    // A client can ask for a publish-capable token, but only the stream's
+    // host or an accepted co-host actually gets one — otherwise anyone
+    // signed in could self-grant camera/mic publish into someone else's
+    // room. Membership in the coHosts subcollection is exactly what the
+    // host grants by accepting a guestRequests doc (see firestore.rules).
+    let grantPublish = false;
+    if (canPublish) {
+      const streamSnap = await db.doc(`liveStreams/${roomName}`).get();
+      const hostUid = streamSnap.exists ? (streamSnap.data()?.hostUid as string | undefined) : undefined;
+      if (hostUid === request.auth.uid) {
+        grantPublish = true;
+      } else {
+        const coHostSnap = await db.doc(`liveStreams/${roomName}/coHosts/${request.auth.uid}`).get();
+        grantPublish = coHostSnap.exists;
+      }
+      if (!grantPublish) {
+        throw new HttpsError('permission-denied', 'Not authorized to publish in this stream.');
+      }
+    }
+
     const at = new AccessToken(livekitApiKey.value(), livekitApiSecret.value(), {
       identity: request.auth.uid,
     });
-    at.addGrant({ roomJoin: true, room: roomName, canPublish: !!canPublish, canSubscribe: true });
+    at.addGrant({ roomJoin: true, room: roomName, canPublish: grantPublish, canSubscribe: true });
     const token = await at.toJwt();
 
     return { token, serverUrl: livekitUrl.value() };
+  }
+);
+
+// Ends a guest's on-stage connection at the LiveKit (SFU) level, not just
+// in Firestore — without this, removing the coHosts doc alone would stop
+// new tokens from granting publish, but wouldn't disconnect a track the
+// guest is already sending. Callable by the host (kicking someone) or by
+// the guest themselves (leaving); either way the coHosts doc is cleaned
+// up here too so both sides of the app state stay in sync.
+export const removeLiveGuest = onCall<{ roomName: string; uid: string }>(
+  { secrets: [livekitApiKey, livekitApiSecret, livekitUrl] },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const { roomName, uid } = request.data;
+    if (!roomName || !uid) throw new HttpsError('invalid-argument', 'Missing roomName or uid.');
+
+    const streamSnap = await db.doc(`liveStreams/${roomName}`).get();
+    if (!streamSnap.exists) throw new HttpsError('not-found', 'Stream not found.');
+    const hostUid = streamSnap.data()?.hostUid as string | undefined;
+    if (request.auth.uid !== hostUid && request.auth.uid !== uid) {
+      throw new HttpsError('permission-denied', 'Only the host or the guest themselves can do this.');
+    }
+
+    const roomService = new RoomServiceClient(livekitUrl.value(), livekitApiKey.value(), livekitApiSecret.value());
+    await roomService.removeParticipant(roomName, uid).catch(() => {
+      // Already disconnected (e.g. they left on their own) — not an error.
+    });
+    await db.doc(`liveStreams/${roomName}/coHosts/${uid}`).delete();
   }
 );

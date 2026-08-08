@@ -20,6 +20,7 @@ import { db, functions, storage } from '../firebase/config';
 import type { LiveCategory, LiveComment, LiveQuestion, LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
 import type { Poll } from '../types/poll';
+import type { LiveBlockedUser, LiveCoHost, LiveGuestRequest, LiveModerator } from '../types/liveGuest';
 
 const LIVE_STREAMS_COLLECTION = 'liveStreams';
 
@@ -152,6 +153,12 @@ export async function sendLiveComment(streamId: string, uid: string, username: s
   const trimmed = text.trim();
   if (!trimmed) return;
   await addDoc(liveCommentsRef(streamId), { uid, username, text: trimmed, createdAt: serverTimestamp() });
+}
+
+// Moderation: delete a comment (author, host, or moderator — enforced by
+// firestore.rules, not here).
+export async function deleteLiveComment(streamId: string, commentId: string): Promise<void> {
+  await deleteDoc(doc(db, LIVE_STREAMS_COLLECTION, streamId, 'comments', commentId));
 }
 
 // Floating-heart taps are batched into one Firestore write per stream every
@@ -299,6 +306,165 @@ export async function toggleQuestionUpvote(
   }
 }
 
+// ---- Moderators ----
+function moderatorsRef(streamId: string) {
+  return collection(db, LIVE_STREAMS_COLLECTION, streamId, 'moderators');
+}
+
+export function subscribeToModerators(streamId: string, onChange: (moderators: LiveModerator[]) => void) {
+  return onSnapshot(moderatorsRef(streamId), (snapshot) => {
+    onChange(
+      snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          uid: docSnap.id,
+          username: data.username ?? 'Someone',
+          addedAt: data.addedAt instanceof Timestamp ? data.addedAt.toMillis() : Date.now(),
+        };
+      })
+    );
+  });
+}
+
+export function subscribeToMyModeratorStatus(streamId: string, uid: string, onChange: (isModerator: boolean) => void) {
+  return onSnapshot(doc(moderatorsRef(streamId), uid), (snapshot) => onChange(snapshot.exists()));
+}
+
+export async function addModerator(streamId: string, uid: string, username: string): Promise<void> {
+  await setDoc(doc(moderatorsRef(streamId), uid), { username, addedAt: serverTimestamp() });
+}
+
+export async function removeModerator(streamId: string, uid: string): Promise<void> {
+  await deleteDoc(doc(moderatorsRef(streamId), uid));
+}
+
+// ---- Blocked (from chat) users ----
+function blockedUsersRef(streamId: string) {
+  return collection(db, LIVE_STREAMS_COLLECTION, streamId, 'blockedUsers');
+}
+
+export function subscribeToBlockedUsers(streamId: string, onChange: (blocked: LiveBlockedUser[]) => void) {
+  return onSnapshot(blockedUsersRef(streamId), (snapshot) => {
+    onChange(
+      snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          uid: docSnap.id,
+          username: data.username ?? 'Someone',
+          blockedAt: data.blockedAt instanceof Timestamp ? data.blockedAt.toMillis() : Date.now(),
+        };
+      })
+    );
+  });
+}
+
+export function subscribeToMyBlockedStatus(streamId: string, uid: string, onChange: (blocked: boolean) => void) {
+  return onSnapshot(doc(blockedUsersRef(streamId), uid), (snapshot) => onChange(snapshot.exists()));
+}
+
+export async function blockUserFromChat(streamId: string, uid: string, username: string): Promise<void> {
+  await setDoc(doc(blockedUsersRef(streamId), uid), { username, blockedAt: serverTimestamp() });
+}
+
+export async function unblockUserFromChat(streamId: string, uid: string): Promise<void> {
+  await deleteDoc(doc(blockedUsersRef(streamId), uid));
+}
+
+// ---- Guest (co-host) requests: a viewer asks to go on-stage, the host
+// accepts or rejects. Accepting also creates the coHosts doc below, which
+// is what getLiveKitToken checks before minting a publish-capable token.
+function guestRequestsRef(streamId: string) {
+  return collection(db, LIVE_STREAMS_COLLECTION, streamId, 'guestRequests');
+}
+
+export async function requestToJoinAsGuest(streamId: string, uid: string, username: string): Promise<void> {
+  await setDoc(doc(guestRequestsRef(streamId), uid), { username, status: 'pending', createdAt: serverTimestamp() });
+}
+
+export async function cancelGuestRequest(streamId: string, uid: string): Promise<void> {
+  await deleteDoc(doc(guestRequestsRef(streamId), uid));
+}
+
+export function subscribeToPendingGuestRequests(streamId: string, onChange: (requests: LiveGuestRequest[]) => void) {
+  const pendingQuery = query(guestRequestsRef(streamId), where('status', '==', 'pending'));
+  return onSnapshot(pendingQuery, (snapshot) => {
+    onChange(
+      snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          uid: docSnap.id,
+          username: data.username ?? 'Someone',
+          status: data.status,
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+        };
+      })
+    );
+  });
+}
+
+export function subscribeToMyGuestRequest(
+  streamId: string,
+  uid: string,
+  onChange: (request: LiveGuestRequest | null) => void
+) {
+  return onSnapshot(doc(guestRequestsRef(streamId), uid), (snapshot) => {
+    if (!snapshot.exists()) {
+      onChange(null);
+      return;
+    }
+    const data = snapshot.data();
+    onChange({
+      uid: snapshot.id,
+      username: data.username ?? 'Someone',
+      status: data.status,
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
+    });
+  });
+}
+
+export async function acceptGuestRequest(streamId: string, uid: string, username: string): Promise<void> {
+  await setDoc(doc(coHostsRef(streamId), uid), { username, joinedAt: serverTimestamp() });
+  await updateDoc(doc(guestRequestsRef(streamId), uid), { status: 'accepted' });
+}
+
+export async function rejectGuestRequest(streamId: string, uid: string): Promise<void> {
+  await updateDoc(doc(guestRequestsRef(streamId), uid), { status: 'rejected' });
+}
+
+// ---- Co-hosts: viewers currently allowed to publish camera/mic into the
+// host's LiveKit room alongside the host.
+function coHostsRef(streamId: string) {
+  return collection(db, LIVE_STREAMS_COLLECTION, streamId, 'coHosts');
+}
+
+export function subscribeToCoHosts(streamId: string, onChange: (coHosts: LiveCoHost[]) => void) {
+  return onSnapshot(coHostsRef(streamId), (snapshot) => {
+    onChange(
+      snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          uid: docSnap.id,
+          username: data.username ?? 'Someone',
+          joinedAt: data.joinedAt instanceof Timestamp ? data.joinedAt.toMillis() : Date.now(),
+        };
+      })
+    );
+  });
+}
+
+export function subscribeToMyCoHostStatus(streamId: string, uid: string, onChange: (isCoHost: boolean) => void) {
+  return onSnapshot(doc(coHostsRef(streamId), uid), (snapshot) => onChange(snapshot.exists()));
+}
+
+// A guest leaving on their own just drops the Firestore doc — their local
+// track stops publishing because the app reconnects with a
+// canPublish:false token (see LiveViewerScreen). Use removeLiveGuest
+// instead when the *host* is forcing someone off-stage, since that also
+// has to disconnect the track at the LiveKit level.
+export async function leaveAsCoHost(streamId: string, uid: string): Promise<void> {
+  await deleteDoc(doc(coHostsRef(streamId), uid));
+}
+
 // LiveKit credentials never reach the client — this calls the
 // getLiveKitToken Cloud Function, which mints a short-lived join token
 // server-side (see functions/src/index.ts).
@@ -306,3 +472,7 @@ export const getLiveKitToken = httpsCallable<
   { roomName: string; canPublish: boolean },
   { token: string; serverUrl: string }
 >(functions, 'getLiveKitToken');
+
+// Forces a guest off-stage at the LiveKit level and removes their coHosts
+// doc — callable by the host (kicking) or the guest themselves (leaving).
+export const removeLiveGuest = httpsCallable<{ roomName: string; uid: string }, void>(functions, 'removeLiveGuest');

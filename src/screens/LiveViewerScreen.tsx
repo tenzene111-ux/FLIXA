@@ -4,9 +4,7 @@ import {
   Alert,
   Animated,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -17,20 +15,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { AudioSession, isTrackReference, LiveKitRoom, useTracks, VideoTrack } from '@livekit/react-native';
+import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { AudioSession, LiveKitRoom, useLocalParticipant, useTracks } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import {
   bumpLiveLike,
+  cancelGuestRequest,
   getLiveKitToken,
   joinAsViewer,
   leaveAsViewer,
-  sendLiveComment,
+  removeLiveGuest,
+  requestToJoinAsGuest,
   subscribeToActiveLivePoll,
+  subscribeToBlockedUsers,
   subscribeToLiveComments,
   subscribeToLiveStream,
+  subscribeToModerators,
+  subscribeToMyBlockedStatus,
+  subscribeToMyCoHostStatus,
+  subscribeToMyGuestRequest,
+  subscribeToMyModeratorStatus,
   subscribeToMyQuestionUpvote,
   subscribeToQuestions,
   subscribeToViewerCount,
@@ -40,9 +47,12 @@ import {
 import { sendGift } from '../services/wallet';
 import { subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
+import LiveChatPanel from '../components/LiveChatPanel';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
 import LivePollCard from '../components/LivePollCard';
+import LiveStageGrid from '../components/LiveStageGrid';
+import type { LiveGuestRequestStatus } from '../types/liveGuest';
 import type { LiveComment, LiveQuestion, LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
@@ -55,8 +65,11 @@ export default function LiveViewerScreen() {
   const { streamId } = route.params;
 
   const [stream, setStream] = useState<LiveStream | null>(null);
-  const [session, setSession] = useState<{ token: string; serverUrl: string } | null>(null);
+  const [session, setSession] = useState<{ token: string; serverUrl: string; canPublish: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isCoHost, setIsCoHost] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   useEffect(() => subscribeToLiveStream(streamId, setStream), [streamId]);
 
@@ -76,10 +89,29 @@ export default function LiveViewerScreen() {
   }, [streamId, user]);
 
   useEffect(() => {
-    getLiveKitToken({ roomName: streamId, canPublish: false })
-      .then((result) => setSession(result.data))
-      .catch((err) => setError(getErrorMessage(err, "Couldn't join this stream.")));
-  }, [streamId]);
+    if (!user) return;
+    return subscribeToMyCoHostStatus(streamId, user.uid, setIsCoHost);
+  }, [streamId, user]);
+
+  useEffect(() => {
+    if (!isCoHost) return;
+    if (!cameraPermission?.granted) requestCameraPermission();
+    if (!micPermission?.granted) requestMicPermission();
+  }, [isCoHost]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLiveKitToken({ roomName: streamId, canPublish: isCoHost })
+      .then((result) => {
+        if (!cancelled) setSession({ ...result.data, canPublish: isCoHost });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getErrorMessage(err, "Couldn't join this stream."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [streamId, isCoHost]);
 
   useEffect(() => {
     if (stream && !stream.isLive) {
@@ -106,26 +138,44 @@ export default function LiveViewerScreen() {
     );
   }
 
+  const canPublish = session.canPublish && !!cameraPermission?.granted && !!micPermission?.granted;
+
   return (
-    <LiveKitRoom serverUrl={session.serverUrl} token={session.token} connect audio={false} video={false}>
-      <ViewerWatchView stream={stream} onClose={() => navigation.goBack()} />
+    <LiveKitRoom
+      key={canPublish ? 'publish' : 'subscribe'}
+      serverUrl={session.serverUrl}
+      token={session.token}
+      connect
+      audio={canPublish}
+      video={canPublish}
+      options={{ adaptiveStream: { pixelDensity: 'screen' } }}
+    >
+      <ViewerWatchView stream={stream} isCoHost={session.canPublish} onClose={() => navigation.goBack()} />
     </LiveKitRoom>
   );
 }
 
 type FloatingHeart = { id: number; anim: Animated.Value };
 
-function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStream; onClose: () => void }) {
+function ViewerWatchView({
+  stream: initialStream,
+  isCoHost,
+  onClose,
+}: {
+  stream: LiveStream;
+  isCoHost: boolean;
+  onClose: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const viewerProfile = useUserProfile(user?.uid);
   const tracks = useTracks([Track.Source.Camera]);
-  const hostTrack = tracks[0];
+  const { localParticipant } = useLocalParticipant();
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
   const [stream, setStream] = useState<LiveStream>(initialStream);
   const [viewerCount, setViewerCount] = useState(0);
   const [comments, setComments] = useState<LiveComment[]>([]);
-  const [chatText, setChatText] = useState('');
   const [sendingGift, setSendingGift] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboard, setLeaderboard] = useState<GiftLeaderboardEntry[]>([]);
@@ -135,6 +185,12 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
   const [qaModalVisible, setQaModalVisible] = useState(false);
   const [questionText, setQuestionText] = useState('');
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
+  const [myRequestStatus, setMyRequestStatus] = useState<LiveGuestRequestStatus | null>(null);
+  const [requestingGuest, setRequestingGuest] = useState(false);
+  const [isModerator, setIsModerator] = useState(false);
+  const [iAmBlocked, setIAmBlocked] = useState(false);
+  const [moderatorUids, setModeratorUids] = useState<Set<string>>(new Set());
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
   const giftBurst = React.useRef(new Animated.Value(0)).current;
   const heartIdRef = useRef(0);
 
@@ -143,6 +199,33 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
   useEffect(() => subscribeToLiveComments(stream.id, setComments), [stream.id]);
   useEffect(() => subscribeToActiveLivePoll(stream.id, setActivePoll), [stream.id]);
   useEffect(() => subscribeToQuestions(stream.id, setQuestions), [stream.id]);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToMyGuestRequest(stream.id, user.uid, (request) => setMyRequestStatus(request?.status ?? null));
+  }, [stream.id, user]);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToMyModeratorStatus(stream.id, user.uid, setIsModerator);
+  }, [stream.id, user]);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToMyBlockedStatus(stream.id, user.uid, setIAmBlocked);
+  }, [stream.id, user]);
+  useEffect(() => {
+    if (!isModerator) {
+      setModeratorUids(new Set());
+      setBlockedUids(new Set());
+      return;
+    }
+    const unsubModerators = subscribeToModerators(stream.id, (moderators) =>
+      setModeratorUids(new Set(moderators.map((m) => m.uid)))
+    );
+    const unsubBlocked = subscribeToBlockedUsers(stream.id, (blocked) => setBlockedUids(new Set(blocked.map((b) => b.uid))));
+    return () => {
+      unsubModerators();
+      unsubBlocked();
+    };
+  }, [stream.id, isModerator]);
   useEffect(
     () =>
       subscribeToGiftLeaderboard('liveStream', stream.id, (entries) =>
@@ -160,12 +243,6 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
     () => questions.find((question) => question.id === stream.highlightedQuestionId) ?? null,
     [questions, stream.highlightedQuestionId]
   );
-
-  const handleSendChat = () => {
-    if (!user || !viewerProfile || !chatText.trim()) return;
-    sendLiveComment(stream.id, user.uid, viewerProfile.username, chatText).catch(() => {});
-    setChatText('');
-  };
 
   const handleTapHeart = () => {
     bumpLiveLike(stream.id);
@@ -202,15 +279,54 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
     setQuestionText('');
   };
 
+  const handleRequestJoin = async () => {
+    if (!user || !viewerProfile || requestingGuest) return;
+    setRequestingGuest(true);
+    try {
+      if (myRequestStatus === 'rejected') {
+        await cancelGuestRequest(stream.id, user.uid);
+      }
+      await requestToJoinAsGuest(stream.id, user.uid, viewerProfile.username);
+    } catch (error) {
+      Alert.alert("Couldn't send request", getErrorMessage(error, 'Please try again.'));
+    } finally {
+      setRequestingGuest(false);
+    }
+  };
+
+  const handleCancelRequest = () => {
+    if (!user) return;
+    cancelGuestRequest(stream.id, user.uid).catch(() => {});
+  };
+
+  const handleLeaveStage = () => {
+    if (!user) return;
+    removeLiveGuest({ roomName: stream.id, uid: user.uid }).catch(() => {});
+  };
+
+  const handleFlipCamera = async () => {
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    const videoTrack = publication?.videoTrack;
+    if (!videoTrack) return;
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    try {
+      await videoTrack.restartTrack({ facingMode: next });
+      setFacingMode(next);
+    } catch {
+      // Device may not have a second camera — no-op.
+    }
+  };
+
+  const tracksPresent = tracks.length > 0;
+
   return (
     <View style={styles.broadcastContainer}>
-      {hostTrack && isTrackReference(hostTrack) ? (
-        <VideoTrack trackRef={hostTrack} style={StyleSheet.absoluteFillObject} />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, styles.cameraPlaceholder]}>
+      <LiveStageGrid tracks={tracks} />
+      {!tracksPresent ? (
+        <View style={[StyleSheet.absoluteFillObject, styles.waitingOverlay]} pointerEvents="none">
           <Text style={styles.waitingLabel}>Waiting for host's video...</Text>
         </View>
-      )}
+      ) : null}
 
       <Animated.View
         style={[
@@ -257,6 +373,11 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
             {stream.title}
           </Text>
         </View>
+        {isCoHost ? (
+          <TouchableOpacity onPress={handleFlipCamera} style={styles.flipButton} hitSlop={8}>
+            <Ionicons name="camera-reverse-outline" size={18} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.viewerBadge}>
           <Ionicons name="eye" size={14} color={colors.text} />
           <Text style={styles.viewerBadgeLabel}>{viewerCount}</Text>
@@ -284,6 +405,21 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
           </View>
         ) : null}
         {activePoll ? <LivePollCard streamId={stream.id} poll={activePoll} uid={user?.uid} /> : null}
+        {isCoHost ? (
+          <TouchableOpacity onPress={handleLeaveStage} style={styles.leaveStageButton}>
+            <Ionicons name="exit-outline" size={14} color={colors.text} />
+            <Text style={styles.leaveStageLabel}>Leave stage</Text>
+          </TouchableOpacity>
+        ) : myRequestStatus === 'pending' ? (
+          <TouchableOpacity onPress={handleCancelRequest} style={styles.requestPendingButton}>
+            <Text style={styles.requestPendingLabel}>Requested to join · Cancel</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={handleRequestJoin} style={styles.requestJoinButton} disabled={requestingGuest}>
+            <Ionicons name="person-add-outline" size={14} color={colors.text} />
+            <Text style={styles.requestJoinLabel}>Request to join</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={[styles.rightActions, { bottom: insets.bottom + 140 }]}>
@@ -303,36 +439,19 @@ function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStrea
         </TouchableOpacity>
       </View>
 
-      {stream.allowComments ? (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.chatWrap, { paddingBottom: insets.bottom + 12 }]}
-        >
-          <FlatList
-            data={comments.slice(-30)}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <Text style={styles.chatLine}>
-                <Text style={styles.chatUsername}>{item.username}: </Text>
-                {item.text}
-              </Text>
-            )}
-            style={styles.chatList}
-          />
-          <View style={styles.chatInputRow}>
-            <TextInput
-              style={styles.chatInput}
-              placeholder="Say something..."
-              placeholderTextColor={colors.textDim}
-              value={chatText}
-              onChangeText={setChatText}
-            />
-            <TouchableOpacity onPress={handleSendChat} hitSlop={8}>
-              <Ionicons name="send" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      ) : null}
+      <LiveChatPanel
+        streamId={stream.id}
+        myUid={user?.uid}
+        myUsername={viewerProfile?.username}
+        comments={comments}
+        allowComments={stream.allowComments}
+        canModerate={isModerator}
+        canManageModerators={false}
+        moderatorUids={moderatorUids}
+        blockedUids={blockedUids}
+        iAmBlocked={iAmBlocked}
+        bottomInset={insets.bottom}
+      />
 
       <Modal visible={showLeaderboard} transparent animationType="slide" onRequestClose={() => setShowLeaderboard(false)}>
         <View style={styles.modalBackdrop}>
@@ -455,8 +574,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  cameraPlaceholder: {
-    backgroundColor: colors.surfaceAlt,
+  waitingOverlay: {
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -503,6 +621,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  flipButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 14,
+    padding: 5,
+  },
   viewerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -546,6 +669,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
+  requestJoinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  requestJoinLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  requestPendingButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  requestPendingLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  leaveStageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.danger,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  leaveStageLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   rightActions: {
     position: 'absolute',
     right: 12,
@@ -554,44 +719,6 @@ const styles = StyleSheet.create({
   },
   actionItem: {
     alignItems: 'center',
-  },
-  chatWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '40%',
-    paddingRight: 70,
-  },
-  chatList: {
-    paddingHorizontal: 16,
-  },
-  chatLine: {
-    color: colors.text,
-    fontSize: 13,
-    marginBottom: 6,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  chatUsername: {
-    fontWeight: '700',
-  },
-  chatInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  chatInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
   },
   modalBackdrop: {
     flex: 1,
