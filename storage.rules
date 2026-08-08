@@ -36,6 +36,16 @@ service firebase.storage {
         && request.resource.contentType.matches('video/.*');
     }
 
+    // Raw photos for Photo Mode / Templates — the onVideoJobCreate Cloud
+    // Function turns each into a short synthetic video clip (see
+    // materializeImageClip in functions/src/video.ts).
+    match /rawPhotos/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // Music/voiceover audio a creator attaches to an edit before it's
     // processed into the final video.
     match /soundUploads/{uid}/{fileName} {

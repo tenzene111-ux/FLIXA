@@ -26,7 +26,10 @@ import type { Poll } from '../types/poll';
 
 const VIDEOS_COLLECTION = 'videos';
 
-function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
+// Shared with services/explore.ts so every place that reads a videos doc
+// into a Post agrees on field defaults instead of hand-duplicating this
+// mapping (which had already drifted once before this was extracted).
+export function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
   return snapshot.docs.map((docSnap) => {
     const data = docSnap.data();
     const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
@@ -39,11 +42,20 @@ function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
       likesCount: data.likeCount ?? 0,
       commentsCount: data.commentCount ?? 0,
       viewCount: data.viewCount ?? 0,
+      shareCount: data.shareCount ?? 0,
+      saveCount: data.saveCount ?? 0,
+      watchCount: data.watchCount ?? 0,
+      totalWatchedSec: data.totalWatchedSec ?? 0,
+      completedViews: data.completedViews ?? 0,
+      retain25: data.retain25 ?? 0,
+      retain50: data.retain50 ?? 0,
+      retain75: data.retain75 ?? 0,
       createdAt,
       trimStart: data.trimStart ?? 0,
       trimEnd: data.trimEnd ?? null,
       overlays: data.overlays ?? [],
       musicTitle: data.musicTitle ?? '',
+      hashtags: data.hashtags ?? [],
       poll: data.poll ?? null,
       privacy: data.privacy ?? 'everyone',
       commentsSetting: data.commentsSetting ?? 'everyone',
@@ -109,6 +121,11 @@ async function uploadFile(
   return getDownloadURL(uploadTask.snapshot.ref);
 }
 
+function extractHashtags(caption: string): string[] {
+  const matches = caption.match(/#[a-zA-Z0-9_]+/g) ?? [];
+  return Array.from(new Set(matches.map((tag) => tag.slice(1).toLowerCase())));
+}
+
 export async function createPost(params: {
   uid: string;
   caption: string;
@@ -152,6 +169,7 @@ export async function createPost(params: {
     trimEnd: params.trimEnd ?? null,
     overlays: params.overlays ?? [],
     musicTitle: params.musicTitle ?? '',
+    hashtags: extractHashtags(params.caption),
     poll: params.poll ?? null,
     privacy: params.privacy ?? 'everyone',
     commentsSetting: params.commentsSetting ?? 'everyone',
@@ -197,6 +215,7 @@ export async function createPostFromProcessedVideo(params: {
     trimEnd: null,
     overlays: [],
     musicTitle: '',
+    hashtags: extractHashtags(params.caption),
     poll: null,
     privacy: params.privacy ?? 'everyone',
     commentsSetting: params.commentsSetting ?? 'everyone',
@@ -210,6 +229,10 @@ export async function createPostFromProcessedVideo(params: {
 // in HomeScreen, nothing security- or money-sensitive.
 export function incrementView(postId: string) {
   updateDoc(doc(db, VIDEOS_COLLECTION, postId), { viewCount: increment(1) }).catch(() => {});
+}
+
+export function incrementShare(postId: string) {
+  updateDoc(doc(db, VIDEOS_COLLECTION, postId), { shareCount: increment(1) }).catch(() => {});
 }
 
 export function subscribeToLikeState(postId: string, uid: string, onChange: (liked: boolean) => void) {

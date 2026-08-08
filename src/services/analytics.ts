@@ -3,6 +3,7 @@ import { db } from '../firebase/config';
 
 export type AnalyticsEventType =
   | 'video_view'
+  | 'video_watch'
   | 'like'
   | 'unlike'
   | 'comment'

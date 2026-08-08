@@ -12,9 +12,11 @@ import {
   getPopularCreators,
   getTopPost,
   getTrendingHashtags,
+  getTrendingSounds,
   searchUsersByUsername,
   type PopularCreator,
   type TrendingHashtag,
+  type TrendingSound,
 } from '../services/explore';
 import type { Post } from '../types/post';
 import type { UserProfile } from '../types/userProfile';
@@ -33,13 +35,15 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [hashtags, setHashtags] = useState<TrendingHashtag[]>([]);
+  const [sounds, setSounds] = useState<TrendingSound[]>([]);
   const [creators, setCreators] = useState<PopularCreator[]>([]);
 
   useEffect(() => {
-    Promise.all([getTopPost(), getTrendingHashtags(), getPopularCreators()])
-      .then(([post, tags, popularCreators]) => {
+    Promise.all([getTopPost(), getTrendingHashtags(), getTrendingSounds(), getPopularCreators()])
+      .then(([post, tags, trendingSounds, popularCreators]) => {
         setTopPost(post);
         setHashtags(tags);
+        setSounds(trendingSounds);
         setCreators(popularCreators);
       })
       .catch(() => {})
@@ -118,7 +122,7 @@ export default function ExploreScreen() {
                 onPress={() => {
                   if (tab === 'Live') {
                     navigation.getParent<BottomTabNavigationProp<MainTabParamList>>()?.navigate('Home', { screen: 'LiveList' });
-                  } else if (tab !== 'Trending') {
+                  } else if (tab !== 'Trending' && tab !== 'Sounds') {
                     Alert.alert(tab, 'Coming soon');
                   }
                 }}
@@ -153,7 +157,11 @@ export default function ExploreScreen() {
                 <Text style={styles.emptyText}>No hashtags yet — post a video with a #hashtag!</Text>
               ) : (
                 hashtags.map((tag) => (
-                  <View key={tag.tag} style={styles.hashtagRow}>
+                  <TouchableOpacity
+                    key={tag.tag}
+                    style={styles.hashtagRow}
+                    onPress={() => navigation.navigate('Hashtag', { tag: tag.tag.replace(/^#/, '') })}
+                  >
                     <View style={styles.hashtagIcon}>
                       <Text style={styles.hashtagIconLabel}>#</Text>
                     </View>
@@ -161,7 +169,30 @@ export default function ExploreScreen() {
                       <Text style={styles.hashtagName}>{tag.tag}</Text>
                       <Text style={styles.hashtagCount}>{tag.count} videos</Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
+                ))
+              )}
+
+              <Text style={styles.sectionTitle}>Trending Sounds</Text>
+              {sounds.length === 0 ? (
+                <Text style={styles.emptyText}>No sounds yet — add music info when you post!</Text>
+              ) : (
+                sounds.map((sound) => (
+                  <TouchableOpacity
+                    key={sound.musicTitle}
+                    style={styles.hashtagRow}
+                    onPress={() => navigation.navigate('Sound', { musicTitle: sound.musicTitle })}
+                  >
+                    <View style={styles.hashtagIcon}>
+                      <Ionicons name="musical-notes" size={16} color={colors.cyan} />
+                    </View>
+                    <View style={styles.hashtagInfo}>
+                      <Text style={styles.hashtagName} numberOfLines={1}>
+                        {sound.musicTitle}
+                      </Text>
+                      <Text style={styles.hashtagCount}>{sound.count} videos</Text>
+                    </View>
+                  </TouchableOpacity>
                 ))
               )}
 

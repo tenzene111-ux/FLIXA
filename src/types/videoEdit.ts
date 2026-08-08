@@ -2,10 +2,19 @@ export type VideoTransition = 'none' | 'fade' | 'zoom' | 'slide' | 'swipe' | 'bl
 
 export const VIDEO_TRANSITIONS: VideoTransition[] = ['none', 'fade', 'zoom', 'slide', 'swipe', 'blur', 'flash', 'spin', 'morph'];
 
+export type ClipKind = 'video' | 'image';
+
 export type VideoClipEdit = {
+  kind: ClipKind;
   storagePath: string;
   trimStartSec: number;
   trimEndSec: number | null;
+  // Only meaningful for kind: 'image' — how long the still frame is shown
+  // before the server turns it into a synthetic clip. Ignored for video.
+  durationSec?: number;
+  // Only meaningful for kind: 'image' — applies a slow zoom over the
+  // still's display duration.
+  kenBurns?: boolean;
   speed: number;
   reversed: boolean;
   transitionToNext: VideoTransition;
@@ -13,6 +22,7 @@ export type VideoClipEdit = {
 
 export function defaultClipEdit(storagePath: string): VideoClipEdit {
   return {
+    kind: 'video',
     storagePath,
     trimStartSec: 0,
     trimEndSec: null,
@@ -21,6 +31,33 @@ export function defaultClipEdit(storagePath: string): VideoClipEdit {
     transitionToNext: 'none',
   };
 }
+
+export function defaultImageClipEdit(storagePath: string, durationSec: number, transitionToNext: VideoTransition = 'fade'): VideoClipEdit {
+  return {
+    kind: 'image',
+    storagePath,
+    trimStartSec: 0,
+    trimEndSec: durationSec,
+    durationSec,
+    kenBurns: true,
+    speed: 1,
+    reversed: false,
+    transitionToNext,
+  };
+}
+
+// What VideoEditorScreen accepts as raw input, before any per-clip edit
+// decisions exist yet — satisfied directly by MultiClipCamera's
+// RecordedClip (kind/kenBurns default to 'video'/false) and by the
+// clip lists PhotoModeScreen builds from picked photos.
+export type EditorInputClip = {
+  uri: string;
+  durationSec: number;
+  speed: number;
+  kind?: ClipKind;
+  kenBurns?: boolean;
+  transitionToNext?: VideoTransition;
+};
 
 export type ColorAdjustments = {
   brightness: number;

@@ -21,17 +21,19 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import colors from '../theme/colors';
 import TrimControls from '../components/TrimControls';
 import { getErrorMessage } from '../utils/errors';
-import { uploadRawClip, createVideoJob, subscribeToVideoJob } from '../services/videoProcessing';
+import { uploadRawClip, uploadRawPhoto, createVideoJob, subscribeToVideoJob } from '../services/videoProcessing';
 import { createPostFromProcessedVideo } from '../services/posts';
-import type { RecordedClip } from '../components/MultiClipCamera';
 import type { CommentsSetting, PostPrivacy } from '../types/post';
 import {
   DEFAULT_COLOR_ADJUSTMENTS,
   DEFAULT_JOB_AUDIO,
   VIDEO_TRANSITIONS,
   defaultClipEdit,
+  defaultImageClipEdit,
+  type ClipKind,
   type ColorAdjustments,
   type CropAspect,
+  type EditorInputClip,
   type VideoClipEdit,
   type VideoEditDecisionList,
   type VideoJob,
@@ -39,6 +41,7 @@ import {
 } from '../types/videoEdit';
 
 const CLIP_SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4] as const;
+const IMAGE_DURATION_OPTIONS = [1, 1.5, 2, 2.5, 3, 4, 5, 6] as const;
 const CROP_OPTIONS: { value: CropAspect; label: string }[] = [
   { value: '9:16', label: '9:16' },
   { value: '1:1', label: '1:1' },
@@ -84,6 +87,7 @@ const COMMENTS_OPTIONS: { value: CommentsSetting; label: string }[] = [
 type EditableClip = {
   id: string;
   localUri: string;
+  kind: ClipKind;
   approxDurationSec: number;
   edit: VideoClipEdit;
   thumbUri: string | null;
@@ -94,29 +98,38 @@ type ToolTab = 'clip' | 'adjust' | 'cover';
 
 type Props = {
   uid: string;
-  clips: RecordedClip[];
+  clips: EditorInputClip[];
+  initialCropAspect?: CropAspect;
+  initialColor?: ColorAdjustments;
   onCancel: () => void;
   onPublished: () => void;
 };
 
-export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }: Props) {
+export default function VideoEditorScreen({ uid, clips, initialCropAspect, initialColor, onCancel, onPublished }: Props) {
   const insets = useSafeAreaInsets();
 
   const [editableClips, setEditableClips] = useState<EditableClip[]>(() =>
-    clips.map((c, i) => ({
-      id: `clip-${i}-${Date.now()}`,
-      localUri: c.uri,
-      approxDurationSec: c.durationSec,
-      edit: { ...defaultClipEdit(''), speed: c.speed },
-      thumbUri: null,
-    }))
+    clips.map((c, i) => {
+      const kind: ClipKind = c.kind ?? 'video';
+      return {
+        id: `clip-${i}-${Date.now()}`,
+        localUri: c.uri,
+        kind,
+        approxDurationSec: c.durationSec,
+        edit:
+          kind === 'image'
+            ? { ...defaultImageClipEdit('', c.durationSec, c.transitionToNext ?? 'fade'), kenBurns: c.kenBurns ?? true }
+            : { ...defaultClipEdit(''), speed: c.speed, transitionToNext: c.transitionToNext ?? 'none' },
+        thumbUri: null,
+      };
+    })
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<ToolTab>('clip');
 
   const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
-  const [cropAspect, setCropAspect] = useState<CropAspect>('9:16');
-  const [color, setColor] = useState<ColorAdjustments>(DEFAULT_COLOR_ADJUSTMENTS);
+  const [cropAspect, setCropAspect] = useState<CropAspect>(initialCropAspect ?? '9:16');
+  const [color, setColor] = useState<ColorAdjustments>(initialColor ?? DEFAULT_COLOR_ADJUSTMENTS);
   const [activeFilterId, setActiveFilterId] = useState('none');
 
   const [coverFrameOptions, setCoverFrameOptions] = useState<string[]>([]);
@@ -133,7 +146,8 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
   const [errorMessage, setErrorMessage] = useState('');
 
   const selectedClip = editableClips[selectedIndex] ?? editableClips[0] ?? null;
-  const player = useVideoPlayer(selectedClip?.localUri ?? null, (p) => {
+  const playerSource = selectedClip && selectedClip.kind !== 'image' ? selectedClip.localUri : null;
+  const player = useVideoPlayer(playerSource, (p) => {
     p.loop = true;
     p.play();
   });
@@ -142,6 +156,10 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
   useEffect(() => {
     editableClips.forEach((c) => {
       if (c.thumbUri) return;
+      if (c.kind === 'image') {
+        setEditableClips((prev) => prev.map((p) => (p.id === c.id ? { ...p, thumbUri: c.localUri } : p)));
+        return;
+      }
       VideoThumbnails.getThumbnailAsync(c.localUri, { time: 0 })
         .then(({ uri }) => setEditableClips((prev) => prev.map((p) => (p.id === c.id ? { ...p, thumbUri: uri } : p))))
         .catch(() => {});
@@ -149,9 +167,14 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
   }, [clipIdsKey]);
 
   const firstClipUri = editableClips[0]?.localUri;
+  const firstClipKind = editableClips[0]?.kind;
   useEffect(() => {
     const first = editableClips[0];
     if (!first) return;
+    if (first.kind === 'image') {
+      setCoverFrameOptions([first.localUri]);
+      return;
+    }
     const dur = Math.max(1, first.approxDurationSec);
     const offsets = [0, dur * 0.33, dur * 0.66, Math.max(0, dur - 0.5)];
     Promise.all(
@@ -161,7 +184,7 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
           .catch(() => null)
       )
     ).then((uris) => setCoverFrameOptions(uris.filter((u): u is string => !!u)));
-  }, [firstClipUri]);
+  }, [firstClipUri, firstClipKind]);
 
   const effectiveCoverUri = coverUri ?? editableClips[0]?.thumbUri ?? coverFrameOptions[0] ?? null;
 
@@ -219,9 +242,9 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
     try {
       const storagePaths: string[] = [];
       for (let i = 0; i < editableClips.length; i++) {
-        const path = await uploadRawClip(uid, editableClips[i].localUri, (pct) => {
-          setUploadProgress((i + pct) / editableClips.length);
-        });
+        const clip = editableClips[i];
+        const onProgress = (pct: number) => setUploadProgress((i + pct) / editableClips.length);
+        const path = clip.kind === 'image' ? await uploadRawPhoto(uid, clip.localUri, onProgress) : await uploadRawClip(uid, clip.localUri, onProgress);
         storagePaths.push(path);
       }
 
@@ -280,7 +303,11 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
       </View>
 
       <View style={styles.preview}>
-        <VideoView player={player} style={styles.previewVideo} contentFit="contain" nativeControls={false} />
+        {selectedClip?.kind === 'image' ? (
+          <Image source={{ uri: selectedClip.localUri }} style={styles.previewVideo} resizeMode="contain" />
+        ) : (
+          <VideoView player={player} style={styles.previewVideo} contentFit="contain" nativeControls={false} />
+        )}
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timelineRow} contentContainerStyle={styles.timelineContent}>
@@ -331,35 +358,63 @@ export default function VideoEditorScreen({ uid, clips, onCancel, onPublished }:
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.panelLabel}>Trim</Text>
-            <TrimControls
-              duration={selectedClip.approxDurationSec}
-              trimStart={selectedClip.edit.trimStartSec}
-              trimEnd={selectedClip.edit.trimEndSec ?? selectedClip.approxDurationSec}
-              onChange={(start, end) => updateSelectedClipEdit({ trimStartSec: start, trimEndSec: end })}
-            />
+            {selectedClip.kind === 'image' ? (
+              <>
+                <Text style={styles.panelLabel}>Duration</Text>
+                <View style={styles.chipRow}>
+                  {IMAGE_DURATION_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.chip, selectedClip.edit.durationSec === option && styles.chipActive]}
+                      onPress={() => updateSelectedClipEdit({ durationSec: option, trimEndSec: option })}
+                    >
+                      <Text style={[styles.chipLabel, selectedClip.edit.durationSec === option && styles.chipLabelActive]}>{option}s</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-            <Text style={styles.panelLabel}>Speed</Text>
-            <View style={styles.chipRow}>
-              {CLIP_SPEED_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[styles.chip, selectedClip.edit.speed === option && styles.chipActive]}
-                  onPress={() => updateSelectedClipEdit({ speed: option })}
-                >
-                  <Text style={[styles.chipLabel, selectedClip.edit.speed === option && styles.chipLabelActive]}>{option}x</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                <View style={styles.reverseRow}>
+                  <Text style={styles.panelLabel}>Ken Burns zoom</Text>
+                  <Switch
+                    value={!!selectedClip.edit.kenBurns}
+                    onValueChange={(value) => updateSelectedClipEdit({ kenBurns: value })}
+                    trackColor={{ true: colors.primary, false: colors.border }}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.panelLabel}>Trim</Text>
+                <TrimControls
+                  duration={selectedClip.approxDurationSec}
+                  trimStart={selectedClip.edit.trimStartSec}
+                  trimEnd={selectedClip.edit.trimEndSec ?? selectedClip.approxDurationSec}
+                  onChange={(start, end) => updateSelectedClipEdit({ trimStartSec: start, trimEndSec: end })}
+                />
 
-            <View style={styles.reverseRow}>
-              <Text style={styles.panelLabel}>Reverse</Text>
-              <Switch
-                value={selectedClip.edit.reversed}
-                onValueChange={(value) => updateSelectedClipEdit({ reversed: value })}
-                trackColor={{ true: colors.primary, false: colors.border }}
-              />
-            </View>
+                <Text style={styles.panelLabel}>Speed</Text>
+                <View style={styles.chipRow}>
+                  {CLIP_SPEED_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.chip, selectedClip.edit.speed === option && styles.chipActive]}
+                      onPress={() => updateSelectedClipEdit({ speed: option })}
+                    >
+                      <Text style={[styles.chipLabel, selectedClip.edit.speed === option && styles.chipLabelActive]}>{option}x</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.reverseRow}>
+                  <Text style={styles.panelLabel}>Reverse</Text>
+                  <Switch
+                    value={selectedClip.edit.reversed}
+                    onValueChange={(value) => updateSelectedClipEdit({ reversed: value })}
+                    trackColor={{ true: colors.primary, false: colors.border }}
+                  />
+                </View>
+              </>
+            )}
 
             {selectedIndex < editableClips.length - 1 && (
               <>

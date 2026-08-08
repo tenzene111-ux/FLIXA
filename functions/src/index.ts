@@ -37,6 +37,41 @@ export const onCommentDelete = onDocumentDeleted('videos/{videoId}/comments/{com
   await db.doc(`videos/${event.params.videoId}`).update({ commentCount: FieldValue.increment(-1) });
 });
 
+// saveCount mirrors likeCount's pattern, just derived from each user's own
+// users/{uid}/savedVideos subcollection instead of a videos/{id} one.
+export const onSavedVideoCreate = onDocumentCreated('users/{uid}/savedVideos/{videoId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ saveCount: FieldValue.increment(1) });
+});
+
+export const onSavedVideoDelete = onDocumentDeleted('users/{uid}/savedVideos/{videoId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ saveCount: FieldValue.increment(-1) });
+});
+
+// Creator analytics (see AnalyticsScreen) are built from batched watch
+// sessions, not per-frame events: the client logs one 'video_watch' event
+// per view when the viewer swipes away (see VideoCard.tsx), and this
+// trigger folds it into aggregate counters on the video doc itself —
+// the same server-authoritative-counter pattern as likeCount/commentCount
+// above, just derived from analytics_events instead of a subcollection.
+export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{eventId}', async (event) => {
+  const data = event.data?.data();
+  if (!data || data.type !== 'video_watch') return;
+  const postId = data.postId as string | undefined;
+  if (!postId) return;
+
+  const watchedSec = Math.max(0, Number(data.watchedSec) || 0);
+  const update: Record<string, ReturnType<typeof FieldValue.increment>> = {
+    watchCount: FieldValue.increment(1),
+    totalWatchedSec: FieldValue.increment(watchedSec),
+  };
+  if (data.completed) update.completedViews = FieldValue.increment(1);
+  if (data.reached25) update.retain25 = FieldValue.increment(1);
+  if (data.reached50) update.retain50 = FieldValue.increment(1);
+  if (data.reached75) update.retain75 = FieldValue.increment(1);
+
+  await db.doc(`videos/${postId}`).update(update).catch(() => {});
+});
+
 // Live Q&A questions are sorted by upvoteCount, which has to be a real
 // queryable field rather than client-tallied — same server-authoritative
 // counter pattern as video likes/comments above.

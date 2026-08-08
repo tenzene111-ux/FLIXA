@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { incrementView, subscribeToLikeState, toggleLike } from '../services/posts';
+import { incrementShare, incrementView, subscribeToLikeState, toggleLike } from '../services/posts';
 import { reportPost } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
@@ -79,16 +79,52 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const trimWindow = Math.max(0, trimEnd - trimStart);
   const progress = trimWindow > 0 ? Math.min(1, Math.max(0, (currentTime - trimStart) / trimWindow)) : 0;
 
+  // Watch time is tracked locally per view session (a ref, not state, so
+  // it doesn't trigger re-renders on every 0.25s timeUpdate tick) and
+  // flushed as a single batched 'video_watch' event when the viewer
+  // swipes away — the onAnalyticsEventCreate Cloud Function folds it into
+  // aggregate counters on the video doc for the creator analytics screen.
+  const watchStatsRef = useRef({ maxWatchedSec: 0, reached25: false, reached50: false, reached75: false, reached100: false });
+
+  const flushWatchStats = (durationSec: number) => {
+    const stats = watchStatsRef.current;
+    if (stats.maxWatchedSec <= 0 || !user) return;
+    logEvent('video_watch', user.uid, {
+      postId: post.id,
+      watchedSec: Math.round(stats.maxWatchedSec),
+      durationSec: Math.round(durationSec),
+      completed: stats.reached100,
+      reached25: stats.reached25,
+      reached50: stats.reached50,
+      reached75: stats.reached75,
+    });
+  };
+
   useEffect(() => {
     if (isActive) {
       player.currentTime = trimStart;
       player.play();
       incrementView(post.id);
       if (user) logEvent('video_view', user.uid, { postId: post.id });
-    } else {
-      player.pause();
+      watchStatsRef.current = { maxWatchedSec: 0, reached25: false, reached50: false, reached75: false, reached100: false };
+      return () => {
+        flushWatchStats(trimWindow);
+      };
     }
+    player.pause();
   }, [isActive, player]);
+
+  useEffect(() => {
+    if (!isActive || trimWindow <= 0) return;
+    const watchedSec = Math.max(0, currentTime - trimStart);
+    const stats = watchStatsRef.current;
+    stats.maxWatchedSec = Math.max(stats.maxWatchedSec, watchedSec);
+    const frac = watchedSec / trimWindow;
+    if (frac >= 0.25) stats.reached25 = true;
+    if (frac >= 0.5) stats.reached50 = true;
+    if (frac >= 0.75) stats.reached75 = true;
+    if (frac >= 0.98) stats.reached100 = true;
+  }, [currentTime, isActive, trimWindow, trimStart]);
 
   // Loop within the trimmed window instead of the whole file once trim
   // bounds are set on the post.
@@ -196,6 +232,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
       message: post.caption ? `${post.caption}\n${post.videoUrl}` : post.videoUrl,
       url: post.videoUrl,
     }).catch(() => {});
+    incrementShare(post.id);
     if (user) logEvent('share', user.uid, { postId: post.id });
   };
 
