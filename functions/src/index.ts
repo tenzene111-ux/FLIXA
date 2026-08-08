@@ -153,6 +153,7 @@ export const sendGift = onCall<{
     tx.set(giftRef, {
       fromUid,
       fromUsername: fromUsername || 'Someone',
+      toUid,
       amount: GIFT_DIAMONDS,
       createdAt: Date.now(),
     });

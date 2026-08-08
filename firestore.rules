@@ -129,7 +129,7 @@ service cloud.firestore {
       // never stored as a trusted field here.
       allow update: if isSignedIn() && (
         (isOwner(resource.data.hostUid) && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['isLive', 'title', 'coverUrl', 'category', 'hashtags', 'allowComments', 'allowGifts', 'pinnedMessage', 'goalTarget', 'highlightedQuestionId']))
+          .hasOnly(['isLive', 'title', 'coverUrl', 'category', 'hashtags', 'allowComments', 'allowGifts', 'pinnedMessage', 'goalTarget', 'highlightedQuestionId', 'battle']))
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
       );
 

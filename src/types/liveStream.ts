@@ -1,3 +1,5 @@
+import type { LiveBattle } from './liveBattle';
+
 export const LIVE_CATEGORIES = [
   'Music',
   'Gaming',
@@ -27,6 +29,7 @@ export type LiveStream = {
   highlightedQuestionId: string | null;
   likeCount: number;
   isLive: boolean;
+  battle: LiveBattle | null;
   createdAt: number;
 };
 

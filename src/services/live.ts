@@ -18,6 +18,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions, storage } from '../firebase/config';
 import type { LiveCategory, LiveComment, LiveQuestion, LiveStream } from '../types/liveStream';
+import type { LiveBattle } from '../types/liveBattle';
 import type { LivePoll } from '../types/livePoll';
 import type { Poll } from '../types/poll';
 import type { LiveBlockedUser, LiveCoHost, LiveGuestRequest, LiveModerator } from '../types/liveGuest';
@@ -41,6 +42,7 @@ function mapLiveStream(id: string, data: DocumentData): LiveStream {
     highlightedQuestionId: data.highlightedQuestionId ?? null,
     likeCount: data.likeCount ?? 0,
     isLive: data.isLive ?? false,
+    battle: (data.battle as LiveBattle | undefined) ?? null,
     createdAt,
   };
 }
@@ -463,6 +465,62 @@ export function subscribeToMyCoHostStatus(streamId: string, uid: string, onChang
 // has to disconnect the track at the LiveKit level.
 export async function leaveAsCoHost(streamId: string, uid: string): Promise<void> {
   await deleteDoc(doc(coHostsRef(streamId), uid));
+}
+
+// ---- Battle mode. Reuses the guestRequests/coHosts plumbing above rather
+// than a parallel set of rules: challenging someone just writes an invite
+// notification (see services/notifications.ts) plus this `battle` field
+// on the host's own stream doc (they own it, no new rule needed since
+// `battle` is one entry in the existing host-updatable field list). The
+// opponent "accepting" is literally requestToJoinAsGuest — the host's
+// screen watches for that specific uid's guest request and auto-accepts
+// it, then flips status to 'active'. See LiveHostScreen's accept effect.
+function battleField(battle: LiveBattle | null) {
+  return { battle };
+}
+
+export async function challengeToBattle(
+  streamId: string,
+  opponentUid: string,
+  opponentUsername: string,
+  durationSec: number
+): Promise<void> {
+  await updateDoc(
+    doc(db, LIVE_STREAMS_COLLECTION, streamId),
+    battleField({ opponentUid, opponentUsername, status: 'inviting', durationSec, startedAt: null, endsAt: null, winnerUid: null })
+  );
+}
+
+export async function activateBattle(
+  streamId: string,
+  opponentUid: string,
+  opponentUsername: string,
+  durationSec: number
+): Promise<void> {
+  const startedAt = Date.now();
+  await updateDoc(
+    doc(db, LIVE_STREAMS_COLLECTION, streamId),
+    battleField({
+      opponentUid,
+      opponentUsername,
+      status: 'active',
+      durationSec,
+      startedAt,
+      endsAt: startedAt + durationSec * 1000,
+      winnerUid: null,
+    })
+  );
+}
+
+export async function endBattle(streamId: string, winnerUid: string | null): Promise<void> {
+  await updateDoc(doc(db, LIVE_STREAMS_COLLECTION, streamId), {
+    'battle.status': 'ended',
+    'battle.winnerUid': winnerUid,
+  });
+}
+
+export async function clearBattle(streamId: string): Promise<void> {
+  await updateDoc(doc(db, LIVE_STREAMS_COLLECTION, streamId), battleField(null));
 }
 
 // LiveKit credentials never reach the client — this calls the

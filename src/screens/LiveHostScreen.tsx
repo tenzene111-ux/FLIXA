@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -24,8 +24,12 @@ import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import {
   acceptGuestRequest,
+  activateBattle,
+  challengeToBattle,
+  clearBattle,
   createLivePoll,
   createLiveStream,
+  endBattle,
   endLivePoll,
   endLiveStream,
   getLiveKitToken,
@@ -45,8 +49,11 @@ import {
   subscribeToViewerCount,
   uploadLiveCover,
 } from '../services/live';
-import { subscribeToGiftLeaderboard } from '../services/gifts';
+import { searchUsersByUsername } from '../services/explore';
+import { createBattleInviteNotification } from '../services/notifications';
+import { subscribeToBattleScores, subscribeToGiftLeaderboard } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
+import LiveBattleStage from '../components/LiveBattleStage';
 import LiveChatPanel from '../components/LiveChatPanel';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
@@ -54,7 +61,10 @@ import LiveStageGrid from '../components/LiveStageGrid';
 import { LIVE_CATEGORIES, type LiveCategory, type LiveComment, type LiveQuestion, type LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
 import type { LiveCoHost, LiveGuestRequest } from '../types/liveGuest';
+import type { UserProfile } from '../types/userProfile';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
+
+const BATTLE_DURATIONS = [60, 180, 300];
 
 export default function LiveHostScreen() {
   const insets = useSafeAreaInsets();
@@ -303,6 +313,10 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
   const [guestRequests, setGuestRequests] = useState<LiveGuestRequest[]>([]);
   const [coHosts, setCoHosts] = useState<LiveCoHost[]>([]);
+  const [battleScores, setBattleScores] = useState({ hostTotal: 0, opponentTotal: 0 });
+  const [battleSecondsRemaining, setBattleSecondsRemaining] = useState(0);
+  const battleAutoAcceptedRef = useRef<string | null>(null);
+  const battleEndedRef = useRef<string | null>(null);
 
   const [pinnedModalVisible, setPinnedModalVisible] = useState(false);
   const [pinnedDraft, setPinnedDraft] = useState('');
@@ -311,6 +325,11 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [qaModalVisible, setQaModalVisible] = useState(false);
   const [guestsModalVisible, setGuestsModalVisible] = useState(false);
+  const [battleModalVisible, setBattleModalVisible] = useState(false);
+  const [battleSearchText, setBattleSearchText] = useState('');
+  const [battleSearchResults, setBattleSearchResults] = useState<UserProfile[]>([]);
+  const [battleDurationSec, setBattleDurationSec] = useState(BATTLE_DURATIONS[1]);
+  const [battleSearching, setBattleSearching] = useState(false);
 
   useEffect(() => subscribeToLiveStream(streamId, setStream), [streamId]);
   useEffect(() => subscribeToViewerCount(streamId, setViewerCount), [streamId]);
@@ -341,6 +360,62 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
     }
     return subscribeToLivePollVotes(streamId, activePoll.id, setPollCounts);
   }, [streamId, activePoll?.id]);
+
+  // A challenged opponent "accepts" by calling requestToJoinAsGuest just
+  // like any other guest (see services/live.ts) — this watches for that
+  // specific person's request and promotes them straight to co-host plus
+  // flips the battle to active, instead of making the host confirm twice.
+  useEffect(() => {
+    if (!stream?.battle || stream.battle.status !== 'inviting') return;
+    const battle = stream.battle;
+    const request = guestRequests.find((r) => r.uid === battle.opponentUid);
+    if (!request || battleAutoAcceptedRef.current === battle.opponentUid) return;
+    battleAutoAcceptedRef.current = battle.opponentUid;
+    acceptGuestRequest(streamId, request.uid, request.username)
+      .then(() => activateBattle(streamId, battle.opponentUid, battle.opponentUsername, battle.durationSec))
+      .catch(() => {
+        battleAutoAcceptedRef.current = null;
+      });
+  }, [streamId, stream?.battle, guestRequests]);
+
+  useEffect(() => {
+    if (stream?.battle?.status !== 'active' || !stream.battle.startedAt) {
+      setBattleScores({ hostTotal: 0, opponentTotal: 0 });
+      return;
+    }
+    return subscribeToBattleScores(
+      streamId,
+      stream.hostUid,
+      stream.battle.opponentUid,
+      stream.battle.startedAt,
+      setBattleScores
+    );
+  }, [streamId, stream?.battle?.status, stream?.battle?.opponentUid, stream?.battle?.startedAt]);
+
+  useEffect(() => {
+    if (stream?.battle?.status !== 'active' || !stream.battle.endsAt) return;
+    const battle = stream.battle;
+    const tick = () => setBattleSecondsRemaining(Math.max(0, Math.round((battle.endsAt! - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [stream?.battle?.status, stream?.battle?.endsAt]);
+
+  useEffect(() => {
+    if (stream?.battle?.status !== 'active' || !stream.battle.endsAt) return;
+    const battle = stream.battle;
+    if (Date.now() < battle.endsAt!) return;
+    if (battleEndedRef.current === battle.opponentUid) return;
+    battleEndedRef.current = battle.opponentUid;
+    const winnerUid =
+      battleScores.hostTotal === battleScores.opponentTotal
+        ? null
+        : battleScores.hostTotal > battleScores.opponentTotal
+          ? stream!.hostUid
+          : battle.opponentUid;
+    endBattle(streamId, winnerUid).catch(() => {});
+    removeLiveGuest({ roomName: streamId, uid: battle.opponentUid }).catch(() => {});
+  }, [streamId, stream, battleScores, battleSecondsRemaining]);
 
   const highlightedQuestion = useMemo(
     () => questions.find((question) => question.id === stream?.highlightedQuestionId) ?? null,
@@ -375,6 +450,66 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
     removeLiveGuest({ roomName: streamId, uid: coHost.uid }).catch((error) =>
       Alert.alert("Couldn't remove guest", getErrorMessage(error, 'Please try again.'))
     );
+  };
+
+  const handleBattleSearch = async (text: string) => {
+    setBattleSearchText(text);
+    if (!text.trim()) {
+      setBattleSearchResults([]);
+      return;
+    }
+    setBattleSearching(true);
+    try {
+      const results = await searchUsersByUsername(text);
+      setBattleSearchResults(results.filter((result) => result.uid !== user?.uid));
+    } catch {
+      setBattleSearchResults([]);
+    } finally {
+      setBattleSearching(false);
+    }
+  };
+
+  const handleChallenge = (opponent: UserProfile) => {
+    if (!profile) return;
+    battleAutoAcceptedRef.current = null;
+    battleEndedRef.current = null;
+    challengeToBattle(streamId, opponent.uid, opponent.username, battleDurationSec)
+      .then(() =>
+        createBattleInviteNotification({
+          toUid: opponent.uid,
+          fromUid: profile.uid,
+          fromUsername: profile.username,
+          battleStreamId: streamId,
+          battleDurationSec,
+        })
+      )
+      .then(() => {
+        setBattleModalVisible(false);
+        setBattleSearchText('');
+        setBattleSearchResults([]);
+      })
+      .catch((error) => Alert.alert("Couldn't send challenge", getErrorMessage(error, 'Please try again.')));
+  };
+
+  const handleCancelChallenge = () => {
+    clearBattle(streamId).catch(() => {});
+  };
+
+  const handleEndBattleNow = () => {
+    if (!stream?.battle) return;
+    const winnerUid =
+      battleScores.hostTotal === battleScores.opponentTotal
+        ? null
+        : battleScores.hostTotal > battleScores.opponentTotal
+          ? stream.hostUid
+          : stream.battle.opponentUid;
+    endBattle(streamId, winnerUid).catch(() => {});
+    removeLiveGuest({ roomName: streamId, uid: stream.battle.opponentUid }).catch(() => {});
+  };
+
+  const handleDismissBattleResult = () => {
+    clearBattle(streamId).catch(() => {});
+    setBattleModalVisible(false);
   };
 
   const openPinnedModal = () => {
@@ -431,9 +566,26 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
     setHighlightedQuestion(streamId, next).catch(() => {});
   };
 
+  const battleLive = stream?.battle && (stream.battle.status === 'active' || stream.battle.status === 'ended');
+
   return (
     <View style={styles.broadcastContainer}>
-      <LiveStageGrid tracks={tracks} />
+      {battleLive && stream?.battle ? (
+        <LiveBattleStage
+          tracks={tracks}
+          hostUid={stream.hostUid}
+          hostUsername={stream.hostUsername}
+          opponentUid={stream.battle.opponentUid}
+          opponentUsername={stream.battle.opponentUsername}
+          hostScore={battleScores.hostTotal}
+          opponentScore={battleScores.opponentTotal}
+          secondsRemaining={battleSecondsRemaining}
+          ended={stream.battle.status === 'ended'}
+          winnerUid={stream.battle.winnerUid}
+        />
+      ) : (
+        <LiveStageGrid tracks={tracks} />
+      )}
 
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <View style={styles.liveBadge}>
@@ -469,6 +621,10 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
       </View>
 
       <View style={[styles.rightActions, { bottom: insets.bottom + 200 }]}>
+        <TouchableOpacity onPress={() => setBattleModalVisible(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="flash-outline" size={26} color={colors.text} />
+          {stream?.battle ? <View style={styles.battleActiveDot} /> : null}
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => setGuestsModalVisible(true)} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="people-outline" size={26} color={colors.text} />
           {guestRequests.length > 0 ? (
@@ -553,6 +709,85 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
                 ))
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={battleModalVisible} transparent animationType="slide" onRequestClose={() => setBattleModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Battle</Text>
+              <TouchableOpacity onPress={() => setBattleModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            {!stream?.battle ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.sectionLabel}>Duration</Text>
+                <View style={styles.chipsRowInline}>
+                  {BATTLE_DURATIONS.map((seconds) => (
+                    <TouchableOpacity
+                      key={seconds}
+                      style={[styles.chip, battleDurationSec === seconds && styles.chipActive]}
+                      onPress={() => setBattleDurationSec(seconds)}
+                    >
+                      <Text style={[styles.chipLabel, battleDurationSec === seconds && styles.chipLabelActive]}>
+                        {Math.round(seconds / 60)} min
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Search a username to challenge..."
+                  placeholderTextColor={colors.textDim}
+                  value={battleSearchText}
+                  onChangeText={handleBattleSearch}
+                  autoCapitalize="none"
+                />
+                {battleSearching ? <Text style={styles.leaderboardEmpty}>Searching...</Text> : null}
+                {battleSearchResults.map((result) => (
+                  <TouchableOpacity key={result.uid} style={styles.guestRow} onPress={() => handleChallenge(result)}>
+                    <Text style={styles.guestName} numberOfLines={1}>
+                      @{result.username}
+                    </Text>
+                    <Ionicons name="flash" size={20} color={colors.pink} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : stream.battle.status === 'inviting' ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.activePollQuestion}>Waiting for @{stream.battle.opponentUsername} to accept...</Text>
+                <TouchableOpacity onPress={handleCancelChallenge} style={styles.modalSecondaryButton}>
+                  <Text style={styles.modalSecondaryLabel}>Cancel challenge</Text>
+                </TouchableOpacity>
+              </View>
+            ) : stream.battle.status === 'active' ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.activePollQuestion}>
+                  @{profile?.username ?? 'You'} {battleScores.hostTotal} — {battleScores.opponentTotal} @
+                  {stream.battle.opponentUsername}
+                </Text>
+                <Text style={styles.leaderboardEmpty}>Ends in {battleSecondsRemaining}s</Text>
+                <TouchableOpacity onPress={handleEndBattleNow} style={styles.modalPrimaryButton}>
+                  <Text style={styles.modalPrimaryLabel}>End battle now</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.modalBody}>
+                <Text style={styles.activePollQuestion}>
+                  {stream.battle.winnerUid === stream.hostUid
+                    ? `@${profile?.username ?? 'You'} won!`
+                    : stream.battle.winnerUid === stream.battle.opponentUid
+                      ? `@${stream.battle.opponentUsername} won!`
+                      : "It's a tie!"}
+                </Text>
+                <TouchableOpacity onPress={handleDismissBattleResult} style={styles.modalPrimaryButton}>
+                  <Text style={styles.modalPrimaryLabel}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -761,6 +996,10 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 16,
   },
+  chipsRowInline: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
   chip: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -924,6 +1163,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 9,
     fontWeight: '800',
+  },
+  battleActiveDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.pink,
   },
   guestsScrollContent: {
     paddingBottom: 16,

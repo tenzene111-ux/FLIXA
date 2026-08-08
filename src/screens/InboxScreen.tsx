@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { useUserProfile } from '../hooks/useUserProfile';
 import { markNotificationRead, subscribeToNotifications } from '../services/notifications';
+import { requestToJoinAsGuest } from '../services/live';
+import { getErrorMessage } from '../utils/errors';
 import type { Notification } from '../types/notification';
 import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -24,12 +29,14 @@ const NOTIFICATION_ICON: Record<Notification['type'], keyof typeof Ionicons.glyp
   like: 'heart',
   comment: 'chatbubble-ellipses',
   follow: 'person-add',
+  battle_invite: 'flash',
 };
 
 const NOTIFICATION_ICON_COLOR: Record<Notification['type'], string> = {
   like: colors.pink,
   comment: colors.cyan,
   follow: colors.primary,
+  battle_invite: colors.pink,
 };
 
 function notificationText(notification: Notification): string {
@@ -40,6 +47,8 @@ function notificationText(notification: Notification): string {
       return `commented: ${notification.commentText}`;
     case 'follow':
       return 'started following you';
+    case 'battle_invite':
+      return 'challenged you to a LIVE battle';
   }
 }
 
@@ -47,6 +56,7 @@ export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const { user } = useAuth();
+  const profile = useUserProfile(user?.uid);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
@@ -54,9 +64,27 @@ export default function InboxScreen() {
     return subscribeToNotifications(user.uid, setNotifications);
   }, [user]);
 
+  const handleAcceptBattle = (notification: Notification) => {
+    if (!user || !profile || !notification.battleStreamId) return;
+    requestToJoinAsGuest(notification.battleStreamId, user.uid, profile.username)
+      .then(() => {
+        navigation
+          .getParent<BottomTabNavigationProp<MainTabParamList>>()
+          ?.navigate('Home', { screen: 'LiveViewer', params: { streamId: notification.battleStreamId! } });
+      })
+      .catch((error) => Alert.alert("Couldn't join battle", getErrorMessage(error, 'The stream may have ended.')));
+  };
+
   const handlePress = (notification: Notification) => {
-    if (!user || notification.read) return;
-    markNotificationRead(user.uid, notification.id).catch(() => {});
+    if (user && !notification.read) {
+      markNotificationRead(user.uid, notification.id).catch(() => {});
+    }
+    if (notification.type === 'battle_invite') {
+      Alert.alert('Battle invite', `@${notification.fromUsername} wants to battle live!`, [
+        { text: 'Decline', style: 'cancel' },
+        { text: 'Accept', onPress: () => handleAcceptBattle(notification) },
+      ]);
+    }
   };
 
   return (

@@ -33,3 +33,30 @@ export function subscribeToGiftLeaderboard(
     onChange(Array.from(totals.values()).sort((a, b) => b.totalDiamonds - a.totalDiamonds));
   });
 }
+
+// Battle score: diamonds gifted to each side since the battle started.
+// Filters the same gifts subcollection client-side by createdAt/toUid
+// rather than a separate query, so no new index is needed.
+export function subscribeToBattleScores(
+  streamId: string,
+  hostUid: string,
+  opponentUid: string,
+  sinceMs: number,
+  onChange: (scores: { hostTotal: number; opponentTotal: number }) => void
+) {
+  const giftsQuery = query(collection(db, 'liveStreams', streamId, 'gifts'), orderBy('createdAt', 'desc'));
+  return onSnapshot(giftsQuery, (snapshot) => {
+    let hostTotal = 0;
+    let opponentTotal = 0;
+    snapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const createdAt = (data.createdAt as number) ?? 0;
+      if (createdAt < sinceMs) return;
+      const toUid = data.toUid as string | undefined;
+      const amount = (data.amount as number) ?? 0;
+      if (toUid === hostUid) hostTotal += amount;
+      else if (toUid === opponentUid) opponentTotal += amount;
+    });
+    onChange({ hostTotal, opponentTotal });
+  });
+}

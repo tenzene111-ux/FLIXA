@@ -45,8 +45,9 @@ import {
   toggleQuestionUpvote,
 } from '../services/live';
 import { sendGift } from '../services/wallet';
-import { subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
+import { subscribeToBattleScores, subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
+import LiveBattleStage from '../components/LiveBattleStage';
 import LiveChatPanel from '../components/LiveChatPanel';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
@@ -191,6 +192,8 @@ function ViewerWatchView({
   const [iAmBlocked, setIAmBlocked] = useState(false);
   const [moderatorUids, setModeratorUids] = useState<Set<string>>(new Set());
   const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
+  const [battleScores, setBattleScores] = useState({ hostTotal: 0, opponentTotal: 0 });
+  const [battleSecondsRemaining, setBattleSecondsRemaining] = useState(0);
   const giftBurst = React.useRef(new Animated.Value(0)).current;
   const heartIdRef = useRef(0);
 
@@ -239,6 +242,23 @@ function ViewerWatchView({
     return subscribeToGiftLeaderboard('liveStream', stream.id, setLeaderboard);
   }, [showLeaderboard, stream.id]);
 
+  useEffect(() => {
+    if (stream.battle?.status !== 'active' || !stream.battle.startedAt) {
+      setBattleScores({ hostTotal: 0, opponentTotal: 0 });
+      return;
+    }
+    return subscribeToBattleScores(stream.id, stream.hostUid, stream.battle.opponentUid, stream.battle.startedAt, setBattleScores);
+  }, [stream.id, stream.hostUid, stream.battle?.status, stream.battle?.opponentUid, stream.battle?.startedAt]);
+
+  useEffect(() => {
+    if (stream.battle?.status !== 'active' || !stream.battle.endsAt) return;
+    const endsAt = stream.battle.endsAt;
+    const tick = () => setBattleSecondsRemaining(Math.max(0, Math.round((endsAt - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [stream.battle?.status, stream.battle?.endsAt]);
+
   const highlightedQuestion = useMemo(
     () => questions.find((question) => question.id === stream.highlightedQuestionId) ?? null,
     [questions, stream.highlightedQuestionId]
@@ -262,15 +282,27 @@ function ViewerWatchView({
     ]).start();
   };
 
-  const handleSendGift = () => {
+  const sendGiftTo = (toUid: string) => {
     if (!user || !viewerProfile || sendingGift) return;
     setSendingGift(true);
-    sendGift({ contextType: 'liveStream', contextId: stream.id, toUid: stream.hostUid, fromUsername: viewerProfile.username })
+    sendGift({ contextType: 'liveStream', contextId: stream.id, toUid, fromUsername: viewerProfile.username })
       .then(() => triggerGiftBurst())
       .catch((error) => {
         Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
       })
       .finally(() => setSendingGift(false));
+  };
+
+  const handleSendGift = () => {
+    if (stream.battle?.status === 'active') {
+      Alert.alert('Send gift to', undefined, [
+        { text: `@${stream.hostUsername}`, onPress: () => sendGiftTo(stream.hostUid) },
+        { text: `@${stream.battle!.opponentUsername}`, onPress: () => sendGiftTo(stream.battle!.opponentUid) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    sendGiftTo(stream.hostUid);
   };
 
   const handleSubmitQuestion = () => {
@@ -318,10 +350,27 @@ function ViewerWatchView({
   };
 
   const tracksPresent = tracks.length > 0;
+  const battleLive = stream.battle && (stream.battle.status === 'active' || stream.battle.status === 'ended');
+  const amBattleOpponent = !!stream.battle && stream.battle.opponentUid === user?.uid;
 
   return (
     <View style={styles.broadcastContainer}>
-      <LiveStageGrid tracks={tracks} />
+      {battleLive && stream.battle ? (
+        <LiveBattleStage
+          tracks={tracks}
+          hostUid={stream.hostUid}
+          hostUsername={stream.hostUsername}
+          opponentUid={stream.battle.opponentUid}
+          opponentUsername={stream.battle.opponentUsername}
+          hostScore={battleScores.hostTotal}
+          opponentScore={battleScores.opponentTotal}
+          secondsRemaining={battleSecondsRemaining}
+          ended={stream.battle.status === 'ended'}
+          winnerUid={stream.battle.winnerUid}
+        />
+      ) : (
+        <LiveStageGrid tracks={tracks} />
+      )}
       {!tracksPresent ? (
         <View style={[StyleSheet.absoluteFillObject, styles.waitingOverlay]} pointerEvents="none">
           <Text style={styles.waitingLabel}>Waiting for host's video...</Text>
@@ -408,7 +457,7 @@ function ViewerWatchView({
         {isCoHost ? (
           <TouchableOpacity onPress={handleLeaveStage} style={styles.leaveStageButton}>
             <Ionicons name="exit-outline" size={14} color={colors.text} />
-            <Text style={styles.leaveStageLabel}>Leave stage</Text>
+            <Text style={styles.leaveStageLabel}>{amBattleOpponent ? 'Forfeit battle' : 'Leave stage'}</Text>
           </TouchableOpacity>
         ) : myRequestStatus === 'pending' ? (
           <TouchableOpacity onPress={handleCancelRequest} style={styles.requestPendingButton}>

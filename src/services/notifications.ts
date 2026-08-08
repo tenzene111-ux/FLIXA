@@ -57,6 +57,25 @@ export async function createFollowNotification(params: { toUid: string; fromUid:
   });
 }
 
+export async function createBattleInviteNotification(params: {
+  toUid: string;
+  fromUid: string;
+  fromUsername: string;
+  battleStreamId: string;
+  battleDurationSec: number;
+}) {
+  if (params.toUid === params.fromUid) return;
+  await addDoc(notificationsRef(params.toUid), {
+    type: 'battle_invite',
+    fromUid: params.fromUid,
+    fromUsername: params.fromUsername,
+    battleStreamId: params.battleStreamId,
+    battleDurationSec: params.battleDurationSec,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
 export function subscribeToNotifications(uid: string, onChange: (notifications: Notification[]) => void) {
   const notificationsQuery = query(notificationsRef(uid), orderBy('createdAt', 'desc'));
   return onSnapshot(notificationsQuery, (snapshot) => {
@@ -67,7 +86,7 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
         // project, which writes a different shape (fromName/message
         // instead of fromUsername, plus a 'system' type this app doesn't
         // render) — normalize rather than let an unrecognized doc crash.
-        const knownTypes: Notification['type'][] = ['like', 'comment', 'follow'];
+        const knownTypes: Notification['type'][] = ['like', 'comment', 'follow', 'battle_invite'];
         return {
           id: docSnap.id,
           type: knownTypes.includes(data.type) ? data.type : 'like',
@@ -76,6 +95,8 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
           postId: data.postId,
           postThumbnailUrl: data.postThumbnailUrl,
           commentText: data.commentText,
+          battleStreamId: data.battleStreamId,
+          battleDurationSec: data.battleDurationSec,
           read: data.read ?? false,
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
         };
