@@ -1,20 +1,29 @@
-import React, { useEffect, useState } from 'react';
-import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { subscribeToLiveStreams } from '../services/live';
-import type { LiveStream } from '../types/liveStream';
+import { LIVE_CATEGORIES, type LiveCategory, type LiveStream } from '../types/liveStream';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 export default function LiveListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const [streams, setStreams] = useState<LiveStream[]>([]);
+  const [category, setCategory] = useState<LiveCategory | 'All'>('All');
 
   useEffect(() => subscribeToLiveStreams(setStreams), []);
+
+  // Most-watched first — real discovery ranking rather than insertion
+  // order, using the viewerCount the onLiveViewerJoin/Leave Cloud
+  // Function triggers keep denormalized on each stream doc.
+  const visibleStreams = useMemo(() => {
+    const filtered = category === 'All' ? streams : streams.filter((stream) => stream.category === category);
+    return [...filtered].sort((a, b) => b.viewerCount - a.viewerCount);
+  }, [streams, category]);
 
   return (
     <View style={styles.container}>
@@ -26,8 +35,20 @@ export default function LiveListScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryRow} contentContainerStyle={styles.categoryRowContent}>
+        {(['All', ...LIVE_CATEGORIES] as const).map((item) => (
+          <TouchableOpacity
+            key={item}
+            style={[styles.categoryChip, category === item && styles.categoryChipActive]}
+            onPress={() => setCategory(item)}
+          >
+            <Text style={[styles.categoryChipLabel, category === item && styles.categoryChipLabelActive]}>{item}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <FlatList
-        data={streams}
+        data={visibleStreams}
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={styles.row}
@@ -56,6 +77,12 @@ export default function LiveListScreen() {
             <View style={styles.categoryBadge}>
               <Text style={styles.categoryBadgeLabel}>{item.category}</Text>
             </View>
+            {item.viewerCount > 0 ? (
+              <View style={styles.viewerCountBadge}>
+                <Ionicons name="eye" size={11} color={colors.text} />
+                <Text style={styles.viewerCountLabel}>{item.viewerCount}</Text>
+              </View>
+            ) : null}
             <Text style={styles.cardTitle} numberOfLines={2}>
               {item.title}
             </Text>
@@ -93,6 +120,34 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 24,
+  },
+  categoryRow: {
+    flexGrow: 0,
+    marginBottom: 4,
+  },
+  categoryRowContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  categoryChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  categoryChipLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  categoryChipLabelActive: {
+    color: colors.text,
   },
   listContent: {
     paddingHorizontal: 12,
@@ -146,6 +201,23 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   categoryBadgeLabel: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  viewerCountBadge: {
+    position: 'absolute',
+    top: 40,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  viewerCountLabel: {
     color: colors.text,
     fontSize: 10,
     fontWeight: '700',

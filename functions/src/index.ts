@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { AggregateField, FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { onDocumentCreated, onDocumentDeleted } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 
@@ -55,6 +55,105 @@ export const onLiveQuestionUpvoteDelete = onDocumentDeleted(
       .update({ upvoteCount: FieldValue.increment(-1) });
   }
 );
+
+// viewerCount is re-derived from the viewers subcollection's real size
+// (not just incremented/decremented) so it can never drift — the client
+// already does the same thing for the single stream it's watching (see
+// subscribeToViewerCount), this just also denormalizes it onto the
+// stream doc itself so the browse list (LiveListScreen) can sort/filter
+// by popularity without opening one listener per card. peakViewers and
+// totalUniqueViewers only ever go up, which is what a post-stream
+// analytics summary needs even after everyone's left.
+async function recomputeViewerCount(streamId: string, isJoin: boolean) {
+  const viewersRef = db.collection(`liveStreams/${streamId}/viewers`);
+  const countSnap = await viewersRef.count().get();
+  const viewerCount = countSnap.data().count;
+
+  const streamRef = db.doc(`liveStreams/${streamId}`);
+  const streamSnap = await streamRef.get();
+  if (!streamSnap.exists) return;
+  const peakViewers = (streamSnap.data()?.peakViewers as number) ?? 0;
+
+  const update: Record<string, unknown> = { viewerCount, peakViewers: Math.max(peakViewers, viewerCount) };
+  if (isJoin) update.totalUniqueViewers = FieldValue.increment(1);
+  await streamRef.update(update);
+}
+
+export const onLiveViewerJoin = onDocumentCreated('liveStreams/{streamId}/viewers/{uid}', async (event) => {
+  await recomputeViewerCount(event.params.streamId, true);
+});
+
+export const onLiveViewerLeave = onDocumentDeleted('liveStreams/{streamId}/viewers/{uid}', async (event) => {
+  await recomputeViewerCount(event.params.streamId, false);
+});
+
+// Fan out a "went live" notification to every follower the moment a
+// stream doc is created (createLiveStream always creates it with
+// isLive: true — there's no "scheduled" state — so doc-create is exactly
+// the "went live" event). Batched in chunks of 500 (Firestore's
+// per-batch write limit) since a popular creator could have thousands.
+export const onLiveStreamCreate = onDocumentCreated('liveStreams/{streamId}', async (event) => {
+  const stream = event.data?.data();
+  if (!stream) return;
+  const { hostUid, hostUsername } = stream as { hostUid: string; hostUsername: string };
+
+  const followersSnap = await db.collection(`users/${hostUid}/followers`).get();
+  const followerUids = followersSnap.docs.map((docSnap) => docSnap.id);
+
+  for (let i = 0; i < followerUids.length; i += 500) {
+    const batch = db.batch();
+    for (const followerUid of followerUids.slice(i, i + 500)) {
+      const notificationRef = db.collection(`users/${followerUid}/notifications`).doc();
+      batch.set(notificationRef, {
+        type: 'went_live',
+        fromUid: hostUid,
+        fromUsername: hostUsername ?? 'Someone',
+        wentLiveStreamId: event.params.streamId,
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+});
+
+// When a host ends a stream (isLive true -> false), compute a
+// post-stream summary once, server-side, and attach it to the same doc.
+// Diamonds/gift/comment totals use aggregate count()/sum() queries
+// (one read each, regardless of collection size) rather than pulling
+// every document — the per-gifter leaderboard itself is still served by
+// the existing client-side subscribeToGiftLeaderboard, which keeps
+// working after the stream ends since the gifts subcollection isn't
+// deleted.
+export const onLiveStreamEnded = onDocumentUpdated('liveStreams/{streamId}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (before.isLive !== true || after.isLive !== false) return;
+
+  const streamId = event.params.streamId;
+  const createdAtMs =
+    typeof after.createdAt?.toMillis === 'function' ? after.createdAt.toMillis() : Date.now();
+
+  const [giftAgg, commentAgg] = await Promise.all([
+    db
+      .collection(`liveStreams/${streamId}/gifts`)
+      .aggregate({ totalDiamonds: AggregateField.sum('amount'), giftCount: AggregateField.count() })
+      .get(),
+    db.collection(`liveStreams/${streamId}/comments`).count().get(),
+  ]);
+
+  await db.doc(`liveStreams/${streamId}`).update({
+    analytics: {
+      durationSec: Math.max(0, Math.round((Date.now() - createdAtMs) / 1000)),
+      peakViewers: (after.peakViewers as number) ?? 0,
+      totalUniqueViewers: (after.totalUniqueViewers as number) ?? 0,
+      totalDiamonds: giftAgg.data().totalDiamonds ?? 0,
+      giftCount: giftAgg.data().giftCount ?? 0,
+      commentCount: commentAgg.data().count ?? 0,
+    },
+  });
+});
 
 async function applyWalletDelta(
   uid: string,

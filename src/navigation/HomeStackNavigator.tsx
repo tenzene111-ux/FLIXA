@@ -6,6 +6,7 @@ import CommentsScreen from '../screens/CommentsScreen';
 import LiveListScreen from '../screens/LiveListScreen';
 import LiveHostScreen from '../screens/LiveHostScreen';
 import LiveViewerScreen from '../screens/LiveViewerScreen';
+import LiveAnalyticsScreen from '../screens/LiveAnalyticsScreen';
 
 export type HomeStackParamList = {
   Feed: undefined;
@@ -14,6 +15,7 @@ export type HomeStackParamList = {
   LiveList: undefined;
   LiveHost: undefined;
   LiveViewer: { streamId: string };
+  LiveAnalytics: { streamId: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -27,6 +29,7 @@ export default function HomeStackNavigator() {
       <Stack.Screen name="LiveList" component={LiveListScreen} />
       <Stack.Screen name="LiveHost" component={LiveHostScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="LiveViewer" component={LiveViewerScreen} options={{ presentation: 'fullScreenModal' }} />
+      <Stack.Screen name="LiveAnalytics" component={LiveAnalyticsScreen} options={{ presentation: 'fullScreenModal' }} />
     </Stack.Navigator>
   );
 }

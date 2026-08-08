@@ -43,6 +43,10 @@ function mapLiveStream(id: string, data: DocumentData): LiveStream {
     likeCount: data.likeCount ?? 0,
     isLive: data.isLive ?? false,
     battle: (data.battle as LiveBattle | undefined) ?? null,
+    viewerCount: data.viewerCount ?? 0,
+    peakViewers: data.peakViewers ?? 0,
+    totalUniqueViewers: data.totalUniqueViewers ?? 0,
+    analytics: (data.analytics as LiveStream['analytics']) ?? null,
     createdAt,
   };
 }

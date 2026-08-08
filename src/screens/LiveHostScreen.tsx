@@ -156,10 +156,12 @@ export default function LiveHostScreen() {
   };
 
   const handleEnd = async () => {
-    if (streamId) await endLiveStream(streamId).catch(() => {});
+    if (!streamId) return;
+    await endLiveStream(streamId).catch(() => {});
+    const endedStreamId = streamId;
     setStreamId(null);
     setSession(null);
-    navigation.goBack();
+    navigation.replace('LiveAnalytics', { streamId: endedStreamId });
   };
 
   if (!session || !streamId) {

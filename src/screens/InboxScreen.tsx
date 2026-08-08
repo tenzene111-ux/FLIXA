@@ -30,6 +30,7 @@ const NOTIFICATION_ICON: Record<Notification['type'], keyof typeof Ionicons.glyp
   comment: 'chatbubble-ellipses',
   follow: 'person-add',
   battle_invite: 'flash',
+  went_live: 'radio',
 };
 
 const NOTIFICATION_ICON_COLOR: Record<Notification['type'], string> = {
@@ -37,6 +38,7 @@ const NOTIFICATION_ICON_COLOR: Record<Notification['type'], string> = {
   comment: colors.cyan,
   follow: colors.primary,
   battle_invite: colors.pink,
+  went_live: colors.pink,
 };
 
 function notificationText(notification: Notification): string {
@@ -49,6 +51,8 @@ function notificationText(notification: Notification): string {
       return 'started following you';
     case 'battle_invite':
       return 'challenged you to a LIVE battle';
+    case 'went_live':
+      return 'is live now';
   }
 }
 
@@ -84,6 +88,10 @@ export default function InboxScreen() {
         { text: 'Decline', style: 'cancel' },
         { text: 'Accept', onPress: () => handleAcceptBattle(notification) },
       ]);
+    } else if (notification.type === 'went_live' && notification.wentLiveStreamId) {
+      navigation
+        .getParent<BottomTabNavigationProp<MainTabParamList>>()
+        ?.navigate('Home', { screen: 'LiveViewer', params: { streamId: notification.wentLiveStreamId } });
     }
   };
 

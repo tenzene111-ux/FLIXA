@@ -86,7 +86,7 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
         // project, which writes a different shape (fromName/message
         // instead of fromUsername, plus a 'system' type this app doesn't
         // render) — normalize rather than let an unrecognized doc crash.
-        const knownTypes: Notification['type'][] = ['like', 'comment', 'follow', 'battle_invite'];
+        const knownTypes: Notification['type'][] = ['like', 'comment', 'follow', 'battle_invite', 'went_live'];
         return {
           id: docSnap.id,
           type: knownTypes.includes(data.type) ? data.type : 'like',
@@ -97,6 +97,7 @@ export function subscribeToNotifications(uid: string, onChange: (notifications: 
           commentText: data.commentText,
           battleStreamId: data.battleStreamId,
           battleDurationSec: data.battleDurationSec,
+          wentLiveStreamId: data.wentLiveStreamId,
           read: data.read ?? false,
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now(),
         };

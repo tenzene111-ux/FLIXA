@@ -1,4 +1,5 @@
 import type { LiveBattle } from './liveBattle';
+import type { LiveStreamAnalytics } from './liveAnalytics';
 
 export const LIVE_CATEGORIES = [
   'Music',
@@ -30,6 +31,10 @@ export type LiveStream = {
   likeCount: number;
   isLive: boolean;
   battle: LiveBattle | null;
+  viewerCount: number;
+  peakViewers: number;
+  totalUniqueViewers: number;
+  analytics: LiveStreamAnalytics | null;
   createdAt: number;
 };
 

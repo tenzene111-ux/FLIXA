@@ -1,6 +1,6 @@
 export type Notification = {
   id: string;
-  type: 'like' | 'comment' | 'follow' | 'battle_invite';
+  type: 'like' | 'comment' | 'follow' | 'battle_invite' | 'went_live';
   fromUid: string;
   fromUsername: string;
   postId?: string;
@@ -8,6 +8,7 @@ export type Notification = {
   commentText?: string;
   battleStreamId?: string;
   battleDurationSec?: number;
+  wentLiveStreamId?: string;
   read: boolean;
   createdAt: number;
 };
