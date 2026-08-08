@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,21 +18,35 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { AudioSession, isTrackReference, LiveKitRoom, useTracks, VideoTrack } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import {
+  createLivePoll,
   createLiveStream,
+  endLivePoll,
   endLiveStream,
   getLiveKitToken,
   sendLiveComment,
+  setHighlightedQuestion,
+  setLivePinnedMessage,
+  subscribeToActiveLivePoll,
   subscribeToLiveComments,
+  subscribeToLiveStream,
+  subscribeToLivePollVotes,
+  subscribeToQuestions,
   subscribeToViewerCount,
+  uploadLiveCover,
 } from '../services/live';
+import { subscribeToGiftLeaderboard } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
-import type { LiveComment } from '../types/liveStream';
+import LiveGoalBar from '../components/LiveGoalBar';
+import LivePinnedBanner from '../components/LivePinnedBanner';
+import { LIVE_CATEGORIES, type LiveCategory, type LiveComment, type LiveQuestion, type LiveStream } from '../types/liveStream';
+import type { LivePoll } from '../types/livePoll';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 export default function LiveHostScreen() {
@@ -39,6 +56,13 @@ export default function LiveHostScreen() {
   const profile = useUserProfile(user?.uid);
 
   const [title, setTitle] = useState('');
+  const [coverUri, setCoverUri] = useState<string | null>(null);
+  const [category, setCategory] = useState<LiveCategory>('Other');
+  const [hashtagsText, setHashtagsText] = useState('');
+  const [allowComments, setAllowComments] = useState(true);
+  const [allowGifts, setAllowGifts] = useState(true);
+  const [goalText, setGoalText] = useState('');
+
   const [streamId, setStreamId] = useState<string | null>(null);
   const [session, setSession] = useState<{ token: string; serverUrl: string } | null>(null);
   const [starting, setStarting] = useState(false);
@@ -57,6 +81,22 @@ export default function LiveHostScreen() {
     if (!micPermission?.granted) requestMicPermission();
   }, []);
 
+  const handlePickCover = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo library permission needed', 'Enable photo library access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [3, 4],
+    });
+    if (!result.canceled && result.assets[0]) {
+      setCoverUri(result.assets[0].uri);
+    }
+  };
+
   const handleGoLive = async () => {
     if (!user || !profile || starting) return;
     if (!cameraPermission?.granted || !micPermission?.granted) {
@@ -68,7 +108,26 @@ export default function LiveHostScreen() {
     }
     setStarting(true);
     try {
-      const id = await createLiveStream(user.uid, profile.username, title.trim() || `${profile.username}'s live`);
+      const coverUrl = coverUri ? await uploadLiveCover(user.uid, coverUri) : null;
+      const hashtags = Array.from(
+        new Set(
+          hashtagsText
+            .split(/[\s,]+/)
+            .map((tag) => tag.trim().replace(/^#/, ''))
+            .filter(Boolean)
+            .map((tag) => `#${tag}`)
+        )
+      );
+      const goalTarget = goalText.trim() ? Math.max(0, parseInt(goalText.trim(), 10) || 0) : null;
+      const id = await createLiveStream(user.uid, profile.username, {
+        title: title.trim() || `${profile.username}'s live`,
+        coverUrl,
+        category,
+        hashtags,
+        allowComments,
+        allowGifts,
+        goalTarget: goalTarget && goalTarget > 0 ? goalTarget : null,
+      });
       const result = await getLiveKitToken({ roomName: id, canPublish: true });
       setStreamId(id);
       setSession(result.data);
@@ -88,12 +147,29 @@ export default function LiveHostScreen() {
 
   if (!session || !streamId) {
     return (
-      <View style={[styles.setupContainer, { paddingTop: insets.top + 24 }]}>
+      <ScrollView
+        style={styles.setupScroll}
+        contentContainerStyle={[styles.setupContainer, { paddingTop: insets.top + 24 }]}
+      >
         <TouchableOpacity onPress={navigation.goBack} style={styles.closeButton} hitSlop={8}>
           <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Ionicons name="radio-outline" size={56} color={colors.textMuted} />
         <Text style={styles.setupTitle}>Go Live</Text>
+
+        <TouchableOpacity style={styles.coverPicker} onPress={handlePickCover} activeOpacity={0.85}>
+          {coverUri ? (
+            <View style={styles.coverPreviewWrap}>
+              <Ionicons name="image" size={20} color={colors.textMuted} />
+              <Text style={styles.coverChangeLabel}>Change cover</Text>
+            </View>
+          ) : (
+            <>
+              <Ionicons name="camera-outline" size={26} color={colors.textMuted} />
+              <Text style={styles.coverChangeLabel}>Add cover</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
         <TextInput
           style={styles.titleInput}
           placeholder="Give your stream a title"
@@ -101,6 +177,55 @@ export default function LiveHostScreen() {
           value={title}
           onChangeText={setTitle}
         />
+
+        <Text style={styles.sectionLabel}>Category</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
+          {LIVE_CATEGORIES.map((item) => (
+            <TouchableOpacity
+              key={item}
+              style={[styles.chip, category === item && styles.chipActive]}
+              onPress={() => setCategory(item)}
+            >
+              <Text style={[styles.chipLabel, category === item && styles.chipLabelActive]}>{item}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <TextInput
+          style={styles.titleInput}
+          placeholder="Hashtags (comma separated)"
+          placeholderTextColor={colors.textDim}
+          value={hashtagsText}
+          onChangeText={setHashtagsText}
+          autoCapitalize="none"
+        />
+
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>Allow comments</Text>
+          <Switch
+            value={allowComments}
+            onValueChange={setAllowComments}
+            trackColor={{ false: colors.surfaceAlt, true: colors.primary }}
+          />
+        </View>
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>Allow gifts</Text>
+          <Switch
+            value={allowGifts}
+            onValueChange={setAllowGifts}
+            trackColor={{ false: colors.surfaceAlt, true: colors.primary }}
+          />
+        </View>
+
+        <TextInput
+          style={styles.titleInput}
+          placeholder="Diamond goal (optional)"
+          placeholderTextColor={colors.textDim}
+          value={goalText}
+          onChangeText={(value) => setGoalText(value.replace(/[^0-9]/g, ''))}
+          keyboardType="number-pad"
+        />
+
         {cameraPermission && !cameraPermission.granted ? (
           <Text style={styles.permissionNotice}>
             Camera access is required to go live.{' '}
@@ -134,7 +259,7 @@ export default function LiveHostScreen() {
         >
           <Text style={styles.goLiveLabel}>{starting ? 'Starting...' : 'Go Live'}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -158,17 +283,107 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
   const profile = useUserProfile(user?.uid);
   const tracks = useTracks([Track.Source.Camera]);
   const localTrack = tracks[0];
+
+  const [stream, setStream] = useState<LiveStream | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [comments, setComments] = useState<LiveComment[]>([]);
   const [chatText, setChatText] = useState('');
+  const [raisedDiamonds, setRaisedDiamonds] = useState(0);
+  const [activePoll, setActivePoll] = useState<LivePoll | null>(null);
+  const [pollCounts, setPollCounts] = useState<Record<string, number>>({});
+  const [questions, setQuestions] = useState<LiveQuestion[]>([]);
 
+  const [pinnedModalVisible, setPinnedModalVisible] = useState(false);
+  const [pinnedDraft, setPinnedDraft] = useState('');
+  const [pollModalVisible, setPollModalVisible] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [qaModalVisible, setQaModalVisible] = useState(false);
+
+  useEffect(() => subscribeToLiveStream(streamId, setStream), [streamId]);
   useEffect(() => subscribeToViewerCount(streamId, setViewerCount), [streamId]);
   useEffect(() => subscribeToLiveComments(streamId, setComments), [streamId]);
+  useEffect(() => subscribeToQuestions(streamId, setQuestions), [streamId]);
+  useEffect(
+    () =>
+      subscribeToGiftLeaderboard('liveStream', streamId, (entries) =>
+        setRaisedDiamonds(entries.reduce((sum, entry) => sum + entry.totalDiamonds, 0))
+      ),
+    [streamId]
+  );
+  useEffect(() => subscribeToActiveLivePoll(streamId, setActivePoll), [streamId]);
+  useEffect(() => {
+    if (!activePoll) {
+      setPollCounts({});
+      return;
+    }
+    return subscribeToLivePollVotes(streamId, activePoll.id, setPollCounts);
+  }, [streamId, activePoll?.id]);
 
-  const handleSend = () => {
+  const highlightedQuestion = useMemo(
+    () => questions.find((question) => question.id === stream?.highlightedQuestionId) ?? null,
+    [questions, stream?.highlightedQuestionId]
+  );
+  const pollTotalVotes = Object.values(pollCounts).reduce((sum, count) => sum + count, 0);
+
+  const handleSendChat = () => {
     if (!user || !profile || !chatText.trim()) return;
     sendLiveComment(streamId, user.uid, profile.username, chatText).catch(() => {});
     setChatText('');
+  };
+
+  const openPinnedModal = () => {
+    setPinnedDraft(stream?.pinnedMessage ?? '');
+    setPinnedModalVisible(true);
+  };
+
+  const handleSavePinned = () => {
+    setLivePinnedMessage(streamId, pinnedDraft.trim() || null).catch(() => {});
+    setPinnedModalVisible(false);
+  };
+
+  const handleClearPinned = () => {
+    setLivePinnedMessage(streamId, null).catch(() => {});
+    setPinnedDraft('');
+    setPinnedModalVisible(false);
+  };
+
+  const handlePollOptionChange = (index: number, value: string) => {
+    setPollOptions((prev) => prev.map((option, i) => (i === index ? value : option)));
+  };
+
+  const handleAddPollOption = () => {
+    setPollOptions((prev) => (prev.length < 4 ? [...prev, ''] : prev));
+  };
+
+  const handleRemovePollOption = (index: number) => {
+    setPollOptions((prev) => (prev.length > 2 ? prev.filter((_, i) => i !== index) : prev));
+  };
+
+  const handleCreatePoll = () => {
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((text) => text.trim()).filter(Boolean);
+    if (!question || options.length < 2) {
+      Alert.alert('Poll needs a question and at least 2 options');
+      return;
+    }
+    createLivePoll(streamId, { question, options: options.map((text, index) => ({ id: `opt-${index}`, text })) })
+      .then(() => {
+        setPollQuestion('');
+        setPollOptions(['', '']);
+        setPollModalVisible(false);
+      })
+      .catch((error) => Alert.alert("Couldn't start poll", getErrorMessage(error, 'Please try again.')));
+  };
+
+  const handleEndPoll = () => {
+    if (!activePoll) return;
+    endLivePoll(streamId, activePoll.id).catch(() => {});
+  };
+
+  const handleToggleHighlight = (questionId: string) => {
+    const next = stream?.highlightedQuestionId === questionId ? null : questionId;
+    setHighlightedQuestion(streamId, next).catch(() => {});
   };
 
   return (
@@ -187,8 +402,42 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
           <Ionicons name="eye" size={14} color={colors.text} />
           <Text style={styles.viewerBadgeLabel}>{viewerCount}</Text>
         </View>
+        <View style={styles.viewerBadge}>
+          <Ionicons name="heart" size={14} color={colors.pink} />
+          <Text style={styles.viewerBadgeLabel}>{stream?.likeCount ?? 0}</Text>
+        </View>
         <TouchableOpacity onPress={onEnd} style={styles.endButton}>
           <Text style={styles.endButtonLabel}>End</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.infoStack, { top: insets.top + 48 }]}>
+        {stream?.pinnedMessage ? <LivePinnedBanner message={stream.pinnedMessage} /> : null}
+        {stream?.goalTarget ? <LiveGoalBar raised={raisedDiamonds} target={stream.goalTarget} /> : null}
+        {highlightedQuestion ? (
+          <View style={styles.highlightedQuestion}>
+            <Ionicons name="help-circle" size={14} color={colors.cyan} />
+            <Text style={styles.highlightedQuestionText} numberOfLines={2}>
+              {highlightedQuestion.username}: {highlightedQuestion.text}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={[styles.rightActions, { bottom: insets.bottom + 200 }]}>
+        <TouchableOpacity onPress={openPinnedModal} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="pin-outline" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setPollModalVisible(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="stats-chart-outline" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setQaModalVisible(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="help-buoy-outline" size={26} color={colors.text} />
+          {questions.length > 0 ? (
+            <View style={styles.badgeDot}>
+              <Text style={styles.badgeDotLabel}>{questions.length}</Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
       </View>
 
@@ -215,21 +464,160 @@ function HostBroadcastView({ streamId, onEnd }: { streamId: string; onEnd: () =>
             value={chatText}
             onChangeText={setChatText}
           />
-          <TouchableOpacity onPress={handleSend} hitSlop={8}>
+          <TouchableOpacity onPress={handleSendChat} hitSlop={8}>
             <Ionicons name="send" size={20} color={colors.primary} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={pinnedModalVisible} transparent animationType="slide" onRequestClose={() => setPinnedModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pinned message</Text>
+              <TouchableOpacity onPress={() => setPinnedModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Pin a message for your viewers"
+                placeholderTextColor={colors.textDim}
+                value={pinnedDraft}
+                onChangeText={setPinnedDraft}
+                multiline
+              />
+              <View style={styles.modalActionsRow}>
+                {stream?.pinnedMessage ? (
+                  <TouchableOpacity onPress={handleClearPinned} style={styles.modalSecondaryButton}>
+                    <Text style={styles.modalSecondaryLabel}>Unpin</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity onPress={handleSavePinned} style={styles.modalPrimaryButton}>
+                  <Text style={styles.modalPrimaryLabel}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={pollModalVisible} transparent animationType="slide" onRequestClose={() => setPollModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Live poll</Text>
+              <TouchableOpacity onPress={() => setPollModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            {activePoll ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.activePollQuestion}>{activePoll.question}</Text>
+                {activePoll.options.map((option) => {
+                  const count = pollCounts[option.id] ?? 0;
+                  const pct = pollTotalVotes > 0 ? Math.round((count / pollTotalVotes) * 100) : 0;
+                  return (
+                    <View key={option.id} style={styles.pollResultRow}>
+                      <Text style={styles.pollResultLabel} numberOfLines={1}>
+                        {option.text}
+                      </Text>
+                      <Text style={styles.pollResultPct}>{pct}%</Text>
+                    </View>
+                  );
+                })}
+                <TouchableOpacity onPress={handleEndPoll} style={styles.modalPrimaryButton}>
+                  <Text style={styles.modalPrimaryLabel}>End poll</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.modalBody}>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Ask your viewers something..."
+                  placeholderTextColor={colors.textDim}
+                  value={pollQuestion}
+                  onChangeText={setPollQuestion}
+                />
+                {pollOptions.map((option, index) => (
+                  <View key={index} style={styles.pollOptionRow}>
+                    <TextInput
+                      style={[styles.modalInput, styles.pollOptionInput]}
+                      placeholder={`Option ${index + 1}`}
+                      placeholderTextColor={colors.textDim}
+                      value={option}
+                      onChangeText={(value) => handlePollOptionChange(index, value)}
+                    />
+                    {pollOptions.length > 2 ? (
+                      <TouchableOpacity onPress={() => handleRemovePollOption(index)} hitSlop={8}>
+                        <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))}
+                {pollOptions.length < 4 ? (
+                  <TouchableOpacity onPress={handleAddPollOption} style={styles.addOptionButton}>
+                    <Text style={styles.addOptionLabel}>+ Add option</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity onPress={handleCreatePoll} style={styles.modalPrimaryButton}>
+                  <Text style={styles.modalPrimaryLabel}>Start poll</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={qaModalVisible} transparent animationType="slide" onRequestClose={() => setQaModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Q&amp;A</Text>
+              <TouchableOpacity onPress={() => setQaModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={questions}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.qaList}
+              ListEmptyComponent={<Text style={styles.leaderboardEmpty}>No questions yet</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.qaRow, stream?.highlightedQuestionId === item.id && styles.qaRowHighlighted]}
+                  onPress={() => handleToggleHighlight(item.id)}
+                >
+                  <View style={styles.qaRowText}>
+                    <Text style={styles.qaUsername}>{item.username}</Text>
+                    <Text style={styles.qaQuestion} numberOfLines={2}>
+                      {item.text}
+                    </Text>
+                  </View>
+                  <View style={styles.qaUpvotes}>
+                    <Ionicons name="arrow-up" size={13} color={colors.cyan} />
+                    <Text style={styles.qaUpvoteCount}>{item.upvoteCount}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  setupContainer: {
+  setupScroll: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  setupContainer: {
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   closeButton: {
     position: 'absolute',
@@ -241,7 +629,28 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginTop: 16,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  coverPicker: {
+    width: 110,
+    height: 146,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 6,
+  },
+  coverPreviewWrap: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  coverChangeLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
   titleInput: {
     width: '100%',
@@ -252,13 +661,60 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  sectionLabel: {
+    alignSelf: 'flex-start',
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  chipsRow: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chipLabelActive: {
+    color: colors.text,
+  },
+  toggleRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: 4,
+  },
+  toggleLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
   goLiveButton: {
     backgroundColor: colors.pink,
     borderRadius: 26,
     paddingVertical: 14,
     paddingHorizontal: 40,
+    marginTop: 16,
   },
   goLiveButtonDisabled: {
     opacity: 0.5,
@@ -292,6 +748,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  infoStack: {
+    position: 'absolute',
+    left: 16,
+    right: 90,
+    gap: 8,
   },
   liveBadge: {
     backgroundColor: colors.pink,
@@ -330,12 +792,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  highlightedQuestion: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  highlightedQuestionText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  rightActions: {
+    position: 'absolute',
+    right: 12,
+    alignItems: 'center',
+    gap: 22,
+  },
+  actionItem: {
+    alignItems: 'center',
+  },
+  badgeDot: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: colors.pink,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeDotLabel: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: '800',
+  },
   chatWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '45%',
+    maxHeight: '40%',
   },
   chatList: {
     paddingHorizontal: 16,
@@ -366,5 +869,171 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 9,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalDone: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalBody: {
+    padding: 16,
+    gap: 10,
+  },
+  modalInput: {
+    color: colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalPrimaryButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  modalPrimaryLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalSecondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  modalSecondaryLabel: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  activePollQuestion: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  pollResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pollResultLabel: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pollResultPct: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pollOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pollOptionInput: {
+    flex: 1,
+  },
+  addOptionButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+  },
+  addOptionLabel: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  qaList: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  leaderboardEmpty: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 24,
+  },
+  qaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  qaRowHighlighted: {
+    borderColor: colors.cyan,
+    backgroundColor: 'rgba(79,216,255,0.08)',
+  },
+  qaRowText: {
+    flex: 1,
+  },
+  qaUsername: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  qaQuestion: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  qaUpvotes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  qaUpvoteCount: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

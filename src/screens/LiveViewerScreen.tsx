@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,18 +23,28 @@ import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import {
+  bumpLiveLike,
   getLiveKitToken,
   joinAsViewer,
   leaveAsViewer,
   sendLiveComment,
+  subscribeToActiveLivePoll,
   subscribeToLiveComments,
   subscribeToLiveStream,
+  subscribeToMyQuestionUpvote,
+  subscribeToQuestions,
   subscribeToViewerCount,
+  submitQuestion,
+  toggleQuestionUpvote,
 } from '../services/live';
 import { sendGift } from '../services/wallet';
 import { subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
-import type { LiveComment, LiveStream } from '../types/liveStream';
+import LiveGoalBar from '../components/LiveGoalBar';
+import LivePinnedBanner from '../components/LivePinnedBanner';
+import LivePollCard from '../components/LivePollCard';
+import type { LiveComment, LiveQuestion, LiveStream } from '../types/liveStream';
+import type { LivePoll } from '../types/livePoll';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 export default function LiveViewerScreen() {
@@ -103,33 +113,68 @@ export default function LiveViewerScreen() {
   );
 }
 
-function ViewerWatchView({ stream, onClose }: { stream: LiveStream; onClose: () => void }) {
+type FloatingHeart = { id: number; anim: Animated.Value };
+
+function ViewerWatchView({ stream: initialStream, onClose }: { stream: LiveStream; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const viewerProfile = useUserProfile(user?.uid);
   const tracks = useTracks([Track.Source.Camera]);
   const hostTrack = tracks[0];
 
+  const [stream, setStream] = useState<LiveStream>(initialStream);
   const [viewerCount, setViewerCount] = useState(0);
   const [comments, setComments] = useState<LiveComment[]>([]);
   const [chatText, setChatText] = useState('');
   const [sendingGift, setSendingGift] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboard, setLeaderboard] = useState<GiftLeaderboardEntry[]>([]);
+  const [raisedDiamonds, setRaisedDiamonds] = useState(0);
+  const [activePoll, setActivePoll] = useState<LivePoll | null>(null);
+  const [questions, setQuestions] = useState<LiveQuestion[]>([]);
+  const [qaModalVisible, setQaModalVisible] = useState(false);
+  const [questionText, setQuestionText] = useState('');
+  const [hearts, setHearts] = useState<FloatingHeart[]>([]);
   const giftBurst = React.useRef(new Animated.Value(0)).current;
+  const heartIdRef = useRef(0);
 
+  useEffect(() => subscribeToLiveStream(stream.id, (updated) => updated && setStream(updated)), [stream.id]);
   useEffect(() => subscribeToViewerCount(stream.id, setViewerCount), [stream.id]);
   useEffect(() => subscribeToLiveComments(stream.id, setComments), [stream.id]);
+  useEffect(() => subscribeToActiveLivePoll(stream.id, setActivePoll), [stream.id]);
+  useEffect(() => subscribeToQuestions(stream.id, setQuestions), [stream.id]);
+  useEffect(
+    () =>
+      subscribeToGiftLeaderboard('liveStream', stream.id, (entries) =>
+        setRaisedDiamonds(entries.reduce((sum, entry) => sum + entry.totalDiamonds, 0))
+      ),
+    [stream.id]
+  );
 
   useEffect(() => {
     if (!showLeaderboard) return;
     return subscribeToGiftLeaderboard('liveStream', stream.id, setLeaderboard);
   }, [showLeaderboard, stream.id]);
 
+  const highlightedQuestion = useMemo(
+    () => questions.find((question) => question.id === stream.highlightedQuestionId) ?? null,
+    [questions, stream.highlightedQuestionId]
+  );
+
   const handleSendChat = () => {
     if (!user || !viewerProfile || !chatText.trim()) return;
     sendLiveComment(stream.id, user.uid, viewerProfile.username, chatText).catch(() => {});
     setChatText('');
+  };
+
+  const handleTapHeart = () => {
+    bumpLiveLike(stream.id);
+    const id = heartIdRef.current++;
+    const anim = new Animated.Value(0);
+    setHearts((prev) => [...prev, { id, anim }]);
+    Animated.timing(anim, { toValue: 1, duration: 1500, useNativeDriver: true }).start(() => {
+      setHearts((prev) => prev.filter((heart) => heart.id !== id));
+    });
   };
 
   const triggerGiftBurst = () => {
@@ -149,6 +194,12 @@ function ViewerWatchView({ stream, onClose }: { stream: LiveStream; onClose: () 
         Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
       })
       .finally(() => setSendingGift(false));
+  };
+
+  const handleSubmitQuestion = () => {
+    if (!user || !viewerProfile || !questionText.trim()) return;
+    submitQuestion(stream.id, user.uid, viewerProfile.username, questionText).catch(() => {});
+    setQuestionText('');
   };
 
   return (
@@ -174,6 +225,26 @@ function ViewerWatchView({ stream, onClose }: { stream: LiveStream; onClose: () 
         <Ionicons name="gift" size={100} color={colors.primary} />
       </Animated.View>
 
+      {hearts.map((heart) => (
+        <Animated.View
+          key={heart.id}
+          pointerEvents="none"
+          style={[
+            styles.floatingHeart,
+            {
+              opacity: heart.anim.interpolate({ inputRange: [0, 0.8, 1], outputRange: [1, 1, 0] }),
+              transform: [
+                { translateY: heart.anim.interpolate({ inputRange: [0, 1], outputRange: [0, -260] }) },
+                { translateX: heart.anim.interpolate({ inputRange: [0, 1], outputRange: [0, (heart.id % 5) * 12 - 24] }) },
+                { scale: heart.anim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.5, 1.1, 0.9] }) },
+              ],
+            },
+          ]}
+        >
+          <Ionicons name="heart" size={30} color={colors.pink} />
+        </Animated.View>
+      ))}
+
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <TouchableOpacity onPress={onClose} hitSlop={8}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
@@ -192,43 +263,76 @@ function ViewerWatchView({ stream, onClose }: { stream: LiveStream; onClose: () 
         </View>
       </View>
 
+      <View style={[styles.infoStack, { top: insets.top + 48 }]}>
+        {stream.pinnedMessage ? <LivePinnedBanner message={stream.pinnedMessage} /> : null}
+        {stream.goalTarget ? <LiveGoalBar raised={raisedDiamonds} target={stream.goalTarget} /> : null}
+        {highlightedQuestion ? (
+          <View style={styles.highlightedQuestion}>
+            <Ionicons name="help-circle" size={14} color={colors.cyan} />
+            <Text style={styles.highlightedQuestionText} numberOfLines={2}>
+              {highlightedQuestion.username}: {highlightedQuestion.text}
+            </Text>
+          </View>
+        ) : null}
+        {stream.hashtags.length > 0 ? (
+          <View style={styles.hashtagsRow}>
+            {stream.hashtags.slice(0, 4).map((tag) => (
+              <Text key={tag} style={styles.hashtagChip}>
+                {tag}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+        {activePoll ? <LivePollCard streamId={stream.id} poll={activePoll} uid={user?.uid} /> : null}
+      </View>
+
       <View style={[styles.rightActions, { bottom: insets.bottom + 140 }]}>
-        <TouchableOpacity onPress={handleSendGift} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
-          <Ionicons name="gift-outline" size={30} color={colors.text} />
-        </TouchableOpacity>
+        {stream.allowGifts ? (
+          <TouchableOpacity onPress={handleSendGift} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
+            <Ionicons name="gift-outline" size={30} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity onPress={() => setShowLeaderboard(true)} style={styles.actionItem} hitSlop={8}>
           <Ionicons name="trophy-outline" size={28} color={colors.text} />
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => setQaModalVisible(true)} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="help-buoy-outline" size={26} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleTapHeart} style={styles.actionItem} hitSlop={8}>
+          <Ionicons name="heart-outline" size={28} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={[styles.chatWrap, { paddingBottom: insets.bottom + 12 }]}
-      >
-        <FlatList
-          data={comments.slice(-30)}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Text style={styles.chatLine}>
-              <Text style={styles.chatUsername}>{item.username}: </Text>
-              {item.text}
-            </Text>
-          )}
-          style={styles.chatList}
-        />
-        <View style={styles.chatInputRow}>
-          <TextInput
-            style={styles.chatInput}
-            placeholder="Say something..."
-            placeholderTextColor={colors.textDim}
-            value={chatText}
-            onChangeText={setChatText}
+      {stream.allowComments ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={[styles.chatWrap, { paddingBottom: insets.bottom + 12 }]}
+        >
+          <FlatList
+            data={comments.slice(-30)}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <Text style={styles.chatLine}>
+                <Text style={styles.chatUsername}>{item.username}: </Text>
+                {item.text}
+              </Text>
+            )}
+            style={styles.chatList}
           />
-          <TouchableOpacity onPress={handleSendChat} hitSlop={8}>
-            <Ionicons name="send" size={20} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+          <View style={styles.chatInputRow}>
+            <TextInput
+              style={styles.chatInput}
+              placeholder="Say something..."
+              placeholderTextColor={colors.textDim}
+              value={chatText}
+              onChangeText={setChatText}
+            />
+            <TouchableOpacity onPress={handleSendChat} hitSlop={8}>
+              <Ionicons name="send" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      ) : null}
 
       <Modal visible={showLeaderboard} transparent animationType="slide" onRequestClose={() => setShowLeaderboard(false)}>
         <View style={styles.modalBackdrop}>
@@ -260,6 +364,67 @@ function ViewerWatchView({ stream, onClose }: { stream: LiveStream; onClose: () 
           </View>
         </View>
       </Modal>
+
+      <Modal visible={qaModalVisible} transparent animationType="slide" onRequestClose={() => setQaModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Q&amp;A</Text>
+              <TouchableOpacity onPress={() => setQaModalVisible(false)} hitSlop={8}>
+                <Text style={styles.modalDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.qaSubmitRow}>
+              <TextInput
+                style={[styles.modalInput, styles.qaSubmitInput]}
+                placeholder="Ask the host a question..."
+                placeholderTextColor={colors.textDim}
+                value={questionText}
+                onChangeText={setQuestionText}
+              />
+              <TouchableOpacity onPress={handleSubmitQuestion} hitSlop={8}>
+                <Ionicons name="send" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={questions}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.qaList}
+              ListEmptyComponent={<Text style={styles.leaderboardEmpty}>No questions yet — ask one!</Text>}
+              renderItem={({ item }) => <QuestionRow streamId={stream.id} question={item} uid={user?.uid} />}
+            />
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function QuestionRow({ streamId, question, uid }: { streamId: string; question: LiveQuestion; uid: string | undefined }) {
+  const [upvoted, setUpvoted] = useState(false);
+
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeToMyQuestionUpvote(streamId, question.id, uid, setUpvoted);
+  }, [streamId, question.id, uid]);
+
+  const handleToggle = () => {
+    if (!uid) return;
+    toggleQuestionUpvote(streamId, question.id, uid, upvoted).catch(() => {});
+  };
+
+  return (
+    <View style={styles.qaRow}>
+      <View style={styles.qaRowText}>
+        <Text style={styles.qaUsername}>{question.username}</Text>
+        <Text style={styles.qaQuestion} numberOfLines={2}>
+          {question.text}
+        </Text>
+      </View>
+      <TouchableOpacity onPress={handleToggle} style={styles.qaUpvotes} hitSlop={8}>
+        <Ionicons name={upvoted ? 'arrow-up-circle' : 'arrow-up-circle-outline'} size={20} color={colors.cyan} />
+        <Text style={styles.qaUpvoteCount}>{question.upvoteCount}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -306,6 +471,11 @@ const styles = StyleSheet.create({
     marginLeft: -50,
     marginTop: -50,
   },
+  floatingHeart: {
+    position: 'absolute',
+    bottom: 160,
+    right: 24,
+  },
   topBar: {
     position: 'absolute',
     left: 16,
@@ -313,6 +483,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  infoStack: {
+    position: 'absolute',
+    left: 16,
+    right: 90,
+    gap: 8,
   },
   hostInfo: {
     flex: 1,
@@ -340,6 +516,35 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: '700',
+  },
+  highlightedQuestion: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  highlightedQuestionText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  hashtagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  hashtagChip: {
+    color: colors.cyan,
+    fontSize: 12,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   rightActions: {
     position: 'absolute',
@@ -397,7 +602,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '60%',
+    maxHeight: '65%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -416,6 +621,15 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 14,
     fontWeight: '700',
+  },
+  modalInput: {
+    color: colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   leaderboardList: {
     padding: 16,
@@ -453,6 +667,54 @@ const styles = StyleSheet.create({
   leaderboardAmountLabel: {
     color: colors.text,
     fontSize: 13,
+    fontWeight: '700',
+  },
+  qaSubmitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  qaSubmitInput: {
+    flex: 1,
+  },
+  qaList: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  qaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  qaRowText: {
+    flex: 1,
+  },
+  qaUsername: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  qaQuestion: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  qaUpvotes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  qaUpvoteCount: {
+    color: colors.text,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

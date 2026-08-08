@@ -35,6 +35,27 @@ export const onCommentDelete = onDocumentDeleted('videos/{videoId}/comments/{com
   await db.doc(`videos/${event.params.videoId}`).update({ commentCount: FieldValue.increment(-1) });
 });
 
+// Live Q&A questions are sorted by upvoteCount, which has to be a real
+// queryable field rather than client-tallied — same server-authoritative
+// counter pattern as video likes/comments above.
+export const onLiveQuestionUpvoteCreate = onDocumentCreated(
+  'liveStreams/{streamId}/questions/{questionId}/upvotes/{uid}',
+  async (event) => {
+    await db
+      .doc(`liveStreams/${event.params.streamId}/questions/${event.params.questionId}`)
+      .update({ upvoteCount: FieldValue.increment(1) });
+  }
+);
+
+export const onLiveQuestionUpvoteDelete = onDocumentDeleted(
+  'liveStreams/{streamId}/questions/{questionId}/upvotes/{uid}',
+  async (event) => {
+    await db
+      .doc(`liveStreams/${event.params.streamId}/questions/${event.params.questionId}`)
+      .update({ upvoteCount: FieldValue.increment(-1) });
+  }
+);
+
 async function applyWalletDelta(
   uid: string,
   amount: number,

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -44,8 +44,17 @@ export default function LiveListScreen() {
             onPress={() => navigation.navigate('LiveViewer', { streamId: item.id })}
             activeOpacity={0.85}
           >
+            {item.coverUrl ? (
+              <Image source={{ uri: item.coverUrl }} style={styles.cardCover} resizeMode="cover" />
+            ) : (
+              <View style={[styles.cardCover, styles.cardCoverPlaceholder]} />
+            )}
+            <View style={styles.cardOverlay} />
             <View style={styles.liveBadge}>
               <Text style={styles.liveBadgeLabel}>LIVE</Text>
+            </View>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeLabel}>{item.category}</Text>
             </View>
             <Text style={styles.cardTitle} numberOfLines={2}>
               {item.title}
@@ -53,6 +62,11 @@ export default function LiveListScreen() {
             <Text style={styles.cardHost} numberOfLines={1}>
               @{item.hostUsername}
             </Text>
+            {item.hashtags.length > 0 ? (
+              <Text style={styles.cardHashtags} numberOfLines={1}>
+                {item.hashtags.slice(0, 3).join(' ')}
+              </Text>
+            ) : null}
           </TouchableOpacity>
         )}
       />
@@ -94,8 +108,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
-    aspectRatio: 1,
+    aspectRatio: 0.8,
     justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  cardCover: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  cardCoverPlaceholder: {
+    backgroundColor: colors.surfaceAlt,
+  },
+  cardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   liveBadge: {
     position: 'absolute',
@@ -111,6 +136,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
+  categoryBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  categoryBadgeLabel: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
+  },
   cardTitle: {
     color: colors.text,
     fontSize: 14,
@@ -120,6 +159,12 @@ const styles = StyleSheet.create({
   cardHost: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  cardHashtags: {
+    color: colors.cyan,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   emptyState: {
     alignItems: 'center',

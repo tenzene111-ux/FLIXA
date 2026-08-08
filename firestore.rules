@@ -122,11 +122,16 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.hostUid == request.auth.uid;
       allow delete: if isOwner(resource.data.hostUid);
-      // The host can only end their own stream / edit its title — viewer
+      // Two different actors can update this doc, for two different
+      // non-overlapping field sets: the host controls stream config, any
+      // signed-in viewer may only bump the low-stakes likeCount. Viewer
       // count is derived client-side from the viewers subcollection below,
       // never stored as a trusted field here.
-      allow update: if isOwner(resource.data.hostUid)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isLive', 'title']);
+      allow update: if isSignedIn() && (
+        (isOwner(resource.data.hostUid) && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isLive', 'title', 'coverUrl', 'category', 'hashtags', 'allowComments', 'allowGifts', 'pinnedMessage', 'goalTarget', 'highlightedQuestionId']))
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+      );
 
       match /comments/{commentId} {
         allow read: if isSignedIn();
@@ -147,6 +152,37 @@ service cloud.firestore {
       match /gifts/{giftId} {
         allow read: if isSignedIn();
         allow write: if false;
+      }
+
+      // A live poll is its own doc so the host can run several across one
+      // broadcast without losing history; only the host may create/end one.
+      match /polls/{pollId} {
+        allow read: if isSignedIn();
+        allow create, update: if isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+        allow delete: if false;
+
+        // One vote doc per user; no update, so a vote can't change or be
+        // double-cast.
+        match /votes/{uid} {
+          allow read: if isSignedIn();
+          allow create: if isOwner(uid) && request.resource.data.optionId is string;
+          allow update, delete: if false;
+        }
+      }
+
+      match /questions/{questionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+        allow delete: if isOwner(resource.data.uid)
+          || isOwner(get(/databases/$(database)/documents/liveStreams/$(streamId)).data.hostUid);
+        allow update: if false;
+
+        // One upvote doc per user; no update, so it can't be double-cast.
+        match /upvotes/{uid} {
+          allow read: if isSignedIn();
+          allow create, delete: if isOwner(uid);
+          allow update: if false;
+        }
       }
     }
 
