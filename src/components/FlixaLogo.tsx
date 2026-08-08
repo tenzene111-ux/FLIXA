@@ -7,8 +7,8 @@ import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 // scripts/generate-brand-assets.js, which rasterizes the exact same
 // shape into the app icon / adaptive-icon PNGs app.json references.
 export const FLIXA_RIBBON_PATH =
-  'M23 118 C19 100 17 78 18 58 C19 48 23 40 31 34 C43 26 59 20 77 16 L83 24 C73 22 59 25 47 30 C37 34 29 39 25 46 C22 52 21 60 22 70 C23 85 25 100 29 112 L23 118 Z';
-export const FLIXA_PLAY_PATH = 'M14 47 L38 56 L14 68 Z';
+  'M17 122 C11 102 9 78 11 56 C13 44 19 34 29 27 C43 17 61 10 79 8 C87 7 92 11 91 18 C89 24 82 27 73 28 C61 30 49 35 40 42 C33 47 28 54 25 62 C22 70 21 80 22 90 C23 100 25 110 29 118 C25 122 20 124 17 122 Z';
+export const FLIXA_PLAY_PATH = 'M16 44 L46 58 L16 74 Z';
 
 type Props = {
   size?: number;
