@@ -98,6 +98,10 @@ service cloud.firestore {
       match /hiddenSounds/{soundId} {
         allow read, write: if isOwner(uid);
       }
+
+      match /searchHistory/{queryId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     // ---- Messaging ----
@@ -122,6 +126,26 @@ service cloud.firestore {
     match /analytics_events/{eventId} {
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow read, update, delete: if false;
+    }
+
+    // ---- Search/discovery stats, maintained server-side by Cloud
+    // Function triggers in functions/src/index.ts (onVideoCreate for
+    // hashtagStats/soundStats, onAnalyticsEventCreate for searchTrends) —
+    // public read (they power autocomplete/trending for every signed-in
+    // user), no client write.
+    match /hashtagStats/{tag} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /soundStats/{soundId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /searchTrends/{queryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // ---- Wallet (server-authoritative — every credit/debit runs through a

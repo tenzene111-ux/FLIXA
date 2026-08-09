@@ -135,6 +135,16 @@ export async function getRecentPosts(count: number): Promise<Post[]> {
   return mapSnapshotToPosts(snapshot);
 }
 
+// Word-match video search (services/search.ts) — exact word only, see
+// extractCaptionWords above for what this can and can't do.
+export async function getVideosByCaptionWord(word: string): Promise<Post[]> {
+  const normalized = word.trim().toLowerCase();
+  if (normalized.length < 2) return [];
+  const postsQuery = query(collection(db, VIDEOS_COLLECTION), where('captionWords', 'array-contains', normalized), limit(40));
+  const snapshot = await getDocs(postsQuery);
+  return mapSnapshotToPosts(snapshot).sort((a, b) => b.createdAt - a.createdAt);
+}
+
 async function uploadFile(
   localUri: string,
   storagePath: string,
@@ -163,6 +173,22 @@ async function uploadFile(
 function extractHashtags(caption: string): string[] {
   const matches = caption.match(/#[a-zA-Z0-9_]+/g) ?? [];
   return Array.from(new Set(matches.map((tag) => tag.slice(1).toLowerCase())));
+}
+
+// Firestore has no real full-text search — this is the honest workaround:
+// a flat array of the caption's words (hashtag/@ prefixes stripped, so
+// "#Bhutan" also matches a plain search for "bhutan"), matched later via
+// array-contains in getVideosByCaptionWord. Exact-word only, no fuzzy/
+// synonym/semantic matching — that would need a real search index
+// (Algolia/Typesense) this project doesn't have.
+function extractCaptionWords(caption: string): string[] {
+  const words = caption
+    .toLowerCase()
+    .replace(/[^a-z0-9\s#@]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.replace(/^[#@]/, ''))
+    .filter((w) => w.length >= 2);
+  return Array.from(new Set(words)).slice(0, 30);
 }
 
 export async function createPost(params: {
@@ -209,6 +235,7 @@ export async function createPost(params: {
     overlays: params.overlays ?? [],
     musicTitle: params.musicTitle ?? '',
     hashtags: extractHashtags(params.caption),
+    captionWords: extractCaptionWords(params.caption),
     poll: params.poll ?? null,
     privacy: params.privacy ?? 'everyone',
     commentsSetting: params.commentsSetting ?? 'everyone',
@@ -255,6 +282,7 @@ export async function createPostFromProcessedVideo(params: {
     overlays: [],
     musicTitle: '',
     hashtags: extractHashtags(params.caption),
+    captionWords: extractCaptionWords(params.caption),
     poll: null,
     privacy: params.privacy ?? 'everyone',
     commentsSetting: params.commentsSetting ?? 'everyone',

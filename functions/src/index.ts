@@ -47,6 +47,54 @@ export const onSavedVideoDelete = onDocumentDeleted('users/{uid}/savedVideos/{vi
   await db.doc(`videos/${event.params.videoId}`).update({ saveCount: FieldValue.increment(-1) });
 });
 
+// ---- Hashtag/sound stats (services/search.ts on the client) ----
+//
+// Maintained incrementally on every upload instead of scanning recent
+// videos on read (the older approach still in services/explore.ts's
+// getTrendingHashtags/getTrendingSounds) — gives real counts, a real
+// day-bucketed history for velocity ranking, and lets hashtag/sound
+// autocomplete run as a proper prefix query instead of a client-side scan.
+export const onVideoCreate = onDocumentCreated('videos/{videoId}', async (event) => {
+  const data = event.data?.data();
+  if (!data) return;
+  const today = dateKeyUTC();
+  const batch = db.batch();
+  let writes = 0;
+
+  const hashtags = ((data.hashtags as string[] | undefined) ?? []).slice(0, 10);
+  hashtags.forEach((tag) => {
+    const key = sanitizeKey(tag);
+    if (!key) return;
+    batch.set(
+      db.doc(`hashtagStats/${key}`),
+      { tag: key, count: FieldValue.increment(1), [`history.${today}`]: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    writes += 1;
+  });
+
+  const musicTitle = ((data.musicTitle as string | undefined) ?? '').trim();
+  if (musicTitle) {
+    const key = sanitizeKey(musicTitle);
+    if (key) {
+      batch.set(
+        db.doc(`soundStats/${key}`),
+        {
+          musicTitle,
+          titleLower: key, // prefix-searchable — musicTitle keeps its display casing
+          count: FieldValue.increment(1),
+          [`history.${today}`]: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      writes += 1;
+    }
+  }
+
+  if (writes > 0) await batch.commit();
+});
+
 // Creator analytics (see AnalyticsScreen) are built from batched watch
 // sessions, not per-frame events: the client logs one 'video_watch' event
 // per view when the viewer swipes away (see VideoCard.tsx), and this
@@ -78,8 +126,16 @@ async function updateVideoWatchCounters(postId: string, data: FirebaseFirestore.
 // them over time); this is the honest v1, not a claim of a trained model.
 const MAX_TOPICS_PER_EVENT = 5;
 
-function sanitizeProfileKey(raw: string): string {
+// Shared by the interest profile below and the hashtag/sound/search-trend
+// stats collections further down — anywhere a free-text string (hashtag,
+// sound title, search query) needs to become a safe Firestore doc id or
+// map key.
+function sanitizeKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 80);
+}
+
+function dateKeyUTC(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
 }
 
 async function bumpInterestProfile(
@@ -95,14 +151,14 @@ async function bumpInterestProfile(
   const update: Record<string, ReturnType<typeof FieldValue.increment>> = {};
   const hashtags = ((post.hashtags as string[] | undefined) ?? []).slice(0, MAX_TOPICS_PER_EVENT);
   hashtags.forEach((tag) => {
-    update[`topics.${sanitizeProfileKey(tag)}`] = FieldValue.increment(weight.topic);
+    update[`topics.${sanitizeKey(tag)}`] = FieldValue.increment(weight.topic);
   });
   if (post.uploaderId && post.uploaderId !== uid) {
     update[`creators.${post.uploaderId}`] = FieldValue.increment(weight.creator);
   }
   const musicTitle = ((post.musicTitle as string | undefined) ?? '').trim();
   if (musicTitle) {
-    update[`sounds.${sanitizeProfileKey(musicTitle)}`] = FieldValue.increment(weight.sound);
+    update[`sounds.${sanitizeKey(musicTitle)}`] = FieldValue.increment(weight.sound);
   }
   if (Object.keys(update).length === 0) return;
 
@@ -129,9 +185,34 @@ async function bumpSearchTopics(uid: string, rawQuery: string) {
   if (words.length === 0) return;
   const update: Record<string, ReturnType<typeof FieldValue.increment>> = {};
   words.forEach((word) => {
-    update[`topics.${sanitizeProfileKey(word)}`] = FieldValue.increment(0.2);
+    update[`topics.${sanitizeKey(word)}`] = FieldValue.increment(0.2);
   });
   await db.doc(`users/${uid}/meta/interestProfile`).set(update, { merge: true }).catch(() => {});
+}
+
+// Global (not per-user) — powers trending-search autocomplete and the
+// "Trending Searches" section (services/search.ts). Velocity is computed
+// client-side from the day-bucketed history map (today's count vs
+// yesterday's) rather than a separate rolling-window field, so no
+// scheduled/cron function is needed to reset it.
+async function bumpSearchTrend(rawQuery: string) {
+  const normalized = rawQuery.trim().toLowerCase().slice(0, 80);
+  if (normalized.length < 2) return;
+  const key = sanitizeKey(normalized);
+  if (!key) return;
+  const today = dateKeyUTC();
+  await db
+    .doc(`searchTrends/${key}`)
+    .set(
+      {
+        query: normalized,
+        totalCount: FieldValue.increment(1),
+        [`history.${today}`]: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    )
+    .catch(() => {});
 }
 
 export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{eventId}', async (event) => {
@@ -193,9 +274,11 @@ export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{event
     case 'profile_visit':
       await bumpCreatorAffinity(uid, data.targetUid as string | undefined, 0.15);
       break;
-    case 'search':
-      await bumpSearchTopics(uid, (data.query as string | undefined) ?? '');
+    case 'search': {
+      const rawQuery = (data.query as string | undefined) ?? '';
+      await Promise.all([bumpSearchTopics(uid, rawQuery), bumpSearchTrend(rawQuery)]);
       break;
+    }
     default:
       break;
   }
