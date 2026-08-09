@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
 
 type MenuItem = {
@@ -48,7 +49,7 @@ export default function MenuScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 24 }]}>
         {ITEMS.map((item) => (
           <TouchableOpacity key={item.label} style={styles.row} onPress={() => item.onPress(navigation)}>
             <Ionicons name={item.icon} size={20} color={colors.text} style={styles.rowIcon} />

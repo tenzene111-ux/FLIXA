@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { getPostsByIds, subscribeToUserPosts } from '../services/posts';
 import { subscribeSavedVideoIds } from '../services/savedVideos';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import type { Post } from '../types/post';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
 
@@ -70,6 +71,7 @@ export default function ProfileScreen() {
         keyExtractor={(item) => item.id}
         numColumns={GRID_COLUMNS}
         columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={{ paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }}
         ListHeaderComponent={
           <>
             <View style={styles.profileTop}>
