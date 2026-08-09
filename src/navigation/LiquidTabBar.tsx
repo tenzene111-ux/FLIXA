@@ -10,9 +10,9 @@ import { useUnreadInboxCount } from '../hooks/useUnreadInboxCount';
 type IconSet = { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap };
 
 // Home/Explore/Inbox/Profile are the four "liquid" slots the active bubble
-// glides between. Upload/Create is deliberately excluded from that system —
-// it keeps its own permanent raised orb so it stays instantly recognizable
-// as the record button rather than just another tab state.
+// glides between. Upload/Create sits in the same row, same alignment, just
+// rendered as a slightly larger permanent gradient orb instead of joining
+// the sliding indicator — so it stays unmistakably the record button.
 const ICONS: Record<string, IconSet> = {
   Home: { active: 'home', inactive: 'home-outline' },
   Explore: { active: 'search', inactive: 'search-outline' },
@@ -24,7 +24,7 @@ const BAR_HEIGHT = 64;
 const BAR_RADIUS = 32;
 const BAR_MARGIN = 18;
 const BUBBLE_SIZE = 46;
-const ORB_SIZE = 58;
+const ORB_SIZE = 48;
 const BOTTOM_GAP = 14;
 
 export default function LiquidTabBar({ state, navigation }: BottomTabBarProps) {
@@ -136,7 +136,31 @@ export default function LiquidTabBar({ state, navigation }: BottomTabBarProps) {
           <View style={styles.row}>
             {state.routes.map((route, index) => {
               if (route.name === 'Upload') {
-                return <View key={route.key} style={styles.slot} />;
+                return (
+                  <Pressable
+                    key={route.key}
+                    onPress={onCreatePress}
+                    onLongPress={onCreateLongPress}
+                    style={styles.slot}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isCreateActive }}
+                  >
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.orbGlow,
+                        {
+                          opacity: orbGlow.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.6] }),
+                          transform: [{ scale: orbGlow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] }) }],
+                        },
+                      ]}
+                    />
+                    <LinearGradient colors={colors.gradientButton} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.orb}>
+                      <View style={styles.orbEdge} />
+                      <Ionicons name="add" size={24} color={colors.text} />
+                    </LinearGradient>
+                  </Pressable>
+                );
               }
               const focused = index === activeIndex;
               const icons = ICONS[route.name];
@@ -176,29 +200,6 @@ export default function LiquidTabBar({ state, navigation }: BottomTabBarProps) {
           </View>
         </View>
       </View>
-
-      <Pressable
-        onPress={onCreatePress}
-        onLongPress={onCreateLongPress}
-        style={[styles.orbWrap, { bottom: insets.bottom + BOTTOM_GAP + BAR_HEIGHT - ORB_SIZE / 2 }]}
-        accessibilityRole="button"
-        accessibilityState={{ selected: isCreateActive }}
-      >
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.orbGlow,
-            {
-              opacity: orbGlow.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.65] }),
-              transform: [{ scale: orbGlow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] }) }],
-            },
-          ]}
-        />
-        <LinearGradient colors={colors.gradientButton} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.orb}>
-          <View style={styles.orbEdge} />
-          <Ionicons name="add" size={28} color={colors.text} />
-        </LinearGradient>
-      </Pressable>
     </View>
   );
 }
@@ -284,15 +285,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 9,
     fontWeight: '700',
-  },
-  orbWrap: {
-    position: 'absolute',
-    left: '50%',
-    marginLeft: -ORB_SIZE / 2,
-    width: ORB_SIZE,
-    height: ORB_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   orbGlow: {
     position: 'absolute',
