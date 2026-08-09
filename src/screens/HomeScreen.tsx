@@ -167,6 +167,12 @@ export default function HomeScreen() {
       withLive.forEach((item) => shownKeysRef.current.add(feedItemKey(item)));
 
       setForYouItems((prev) => (mode === 'reset' ? withLive : [...prev, ...withLive]));
+      // Don't wait on FlatList's onViewableItemsChanged to mark the first
+      // item active — on a fresh mount that callback can fire late (or,
+      // in some RN versions, not until the user first scrolls), which is
+      // exactly why the feed was sitting there paused until tapped. Autoplay
+      // should start the moment the first video is actually on screen.
+      if (mode === 'reset' && withLive.length > 0) setActiveKey(feedItemKey(withLive[0]));
     },
     [user, isExcludedFromForYou]
   );
@@ -176,6 +182,7 @@ export default function HomeScreen() {
     const uids = Array.from(followingUidsRef.current);
     const posts = uids.length ? await getPostsByCreators(uids, 15) : [];
     setFollowingPosts(posts);
+    if (posts.length > 0) setActiveKey(`v:${posts[0].id}`);
   }, [user]);
 
   useEffect(() => {
@@ -193,6 +200,17 @@ export default function HomeScreen() {
     fetchFollowing().finally(() => setFollowingLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, activeFeed]);
+
+  // Each tab's FlatList fully unmounts when the other tab is shown (see the
+  // activeFeed ternary below), so switching back to For You always starts
+  // from a fresh scroll position at the top — activeKey should follow that,
+  // rather than possibly still pointing at whatever was active in Following.
+  useEffect(() => {
+    if (activeFeed === 'forYou' && forYouItems.length > 0) {
+      setActiveKey(feedItemKey(forYouItems[0]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFeed]);
 
   const onRefresh = () => {
     setRefreshing(true);
