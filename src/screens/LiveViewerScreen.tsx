@@ -45,14 +45,22 @@ import {
   toggleQuestionUpvote,
 } from '../services/live';
 import { sendGift } from '../services/wallet';
-import { subscribeToBattleScores, subscribeToGiftLeaderboard, type GiftLeaderboardEntry } from '../services/gifts';
+import {
+  subscribeToBattleScores,
+  subscribeToGiftLeaderboard,
+  subscribeToLatestGift,
+  type GiftLeaderboardEntry,
+} from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
 import LiveBattleStage from '../components/LiveBattleStage';
 import LiveChatPanel from '../components/LiveChatPanel';
+import GiftAnimationOverlay, { type GiftAnimationEvent } from '../components/GiftAnimationOverlay';
+import GiftPicker from '../components/GiftPicker';
 import LiveGoalBar from '../components/LiveGoalBar';
 import LivePinnedBanner from '../components/LivePinnedBanner';
 import LivePollCard from '../components/LivePollCard';
 import LiveStageGrid from '../components/LiveStageGrid';
+import { GIFT_BY_ID, type GiftDefinition } from '../types/gift';
 import type { LiveGuestRequestStatus } from '../types/liveGuest';
 import type { LiveComment, LiveQuestion, LiveStream } from '../types/liveStream';
 import type { LivePoll } from '../types/livePoll';
@@ -194,7 +202,9 @@ function ViewerWatchView({
   const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
   const [battleScores, setBattleScores] = useState({ hostTotal: 0, opponentTotal: 0 });
   const [battleSecondsRemaining, setBattleSecondsRemaining] = useState(0);
-  const giftBurst = React.useRef(new Animated.Value(0)).current;
+  const [giftPickerVisible, setGiftPickerVisible] = useState(false);
+  const [giftRecipient, setGiftRecipient] = useState<{ uid: string; label: string } | null>(null);
+  const [giftEvent, setGiftEvent] = useState<GiftAnimationEvent | null>(null);
   const heartIdRef = useRef(0);
 
   useEffect(() => subscribeToLiveStream(stream.id, (updated) => updated && setStream(updated)), [stream.id]);
@@ -242,6 +252,15 @@ function ViewerWatchView({
     return subscribeToGiftLeaderboard('liveStream', stream.id, setLeaderboard);
   }, [showLeaderboard, stream.id]);
 
+  // Plays for every viewer the moment a gift lands, not just the sender.
+  useEffect(() => {
+    return subscribeToLatestGift('liveStream', stream.id, (event) => {
+      const gift = GIFT_BY_ID[event.giftId];
+      if (!gift) return;
+      setGiftEvent({ id: event.id, gift, fromUsername: event.fromUsername });
+    });
+  }, [stream.id]);
+
   useEffect(() => {
     if (stream.battle?.status !== 'active' || !stream.battle.startedAt) {
       setBattleScores({ hostTotal: 0, opponentTotal: 0 });
@@ -274,35 +293,41 @@ function ViewerWatchView({
     });
   };
 
-  const triggerGiftBurst = () => {
-    giftBurst.setValue(0);
-    Animated.sequence([
-      Animated.spring(giftBurst, { toValue: 1, useNativeDriver: true, friction: 4 }),
-      Animated.timing(giftBurst, { toValue: 0, duration: 300, delay: 500, useNativeDriver: true }),
-    ]).start();
+  const openGiftPickerFor = (uid: string, label: string) => {
+    setGiftRecipient({ uid, label });
+    setGiftPickerVisible(true);
   };
 
-  const sendGiftTo = (toUid: string) => {
-    if (!user || !viewerProfile || sendingGift) return;
-    setSendingGift(true);
-    sendGift({ contextType: 'liveStream', contextId: stream.id, toUid, fromUsername: viewerProfile.username })
-      .then(() => triggerGiftBurst())
-      .catch((error) => {
-        Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
-      })
-      .finally(() => setSendingGift(false));
-  };
-
-  const handleSendGift = () => {
+  const handleOpenGiftPicker = () => {
     if (stream.battle?.status === 'active') {
       Alert.alert('Send gift to', undefined, [
-        { text: `@${stream.hostUsername}`, onPress: () => sendGiftTo(stream.hostUid) },
-        { text: `@${stream.battle!.opponentUsername}`, onPress: () => sendGiftTo(stream.battle!.opponentUid) },
+        { text: `@${stream.hostUsername}`, onPress: () => openGiftPickerFor(stream.hostUid, `@${stream.hostUsername}`) },
+        {
+          text: `@${stream.battle!.opponentUsername}`,
+          onPress: () => openGiftPickerFor(stream.battle!.opponentUid, `@${stream.battle!.opponentUsername}`),
+        },
         { text: 'Cancel', style: 'cancel' },
       ]);
       return;
     }
-    sendGiftTo(stream.hostUid);
+    openGiftPickerFor(stream.hostUid, `@${stream.hostUsername}`);
+  };
+
+  const handleSelectGift = (gift: GiftDefinition) => {
+    if (!user || !viewerProfile || sendingGift || !giftRecipient) return;
+    setSendingGift(true);
+    setGiftPickerVisible(false);
+    sendGift({
+      contextType: 'liveStream',
+      contextId: stream.id,
+      toUid: giftRecipient.uid,
+      fromUsername: viewerProfile.username,
+      giftId: gift.id,
+    })
+      .catch((error) => {
+        Alert.alert("Couldn't send gift", getErrorMessage(error, 'Check your wallet balance and try again.'));
+      })
+      .finally(() => setSendingGift(false));
   };
 
   const handleSubmitQuestion = () => {
@@ -377,18 +402,7 @@ function ViewerWatchView({
         </View>
       ) : null}
 
-      <Animated.View
-        style={[
-          styles.giftBurst,
-          {
-            opacity: giftBurst,
-            transform: [{ scale: giftBurst.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.3] }) }],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        <Ionicons name="gift" size={100} color={colors.primary} />
-      </Animated.View>
+      <GiftAnimationOverlay event={giftEvent} onDone={() => setGiftEvent(null)} />
 
       {hearts.map((heart) => (
         <Animated.View
@@ -473,7 +487,7 @@ function ViewerWatchView({
 
       <View style={[styles.rightActions, { bottom: insets.bottom + 140 }]}>
         {stream.allowGifts ? (
-          <TouchableOpacity onPress={handleSendGift} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
+          <TouchableOpacity onPress={handleOpenGiftPicker} style={styles.actionItem} hitSlop={8} disabled={sendingGift}>
             <Ionicons name="gift-outline" size={30} color={colors.text} />
           </TouchableOpacity>
         ) : null}
@@ -564,6 +578,14 @@ function ViewerWatchView({
           </View>
         </View>
       </Modal>
+
+      <GiftPicker
+        visible={giftPickerVisible}
+        onClose={() => setGiftPickerVisible(false)}
+        onSelectGift={handleSelectGift}
+        sending={sendingGift}
+        recipientLabel={giftRecipient?.label ?? `@${stream.hostUsername}`}
+      />
     </View>
   );
 }
@@ -630,13 +652,6 @@ const styles = StyleSheet.create({
   waitingLabel: {
     color: colors.textMuted,
     fontSize: 14,
-  },
-  giftBurst: {
-    position: 'absolute',
-    top: '45%',
-    left: '50%',
-    marginLeft: -50,
-    marginTop: -50,
   },
   floatingHeart: {
     position: 'absolute',

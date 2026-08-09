@@ -24,8 +24,11 @@ import { useAuth } from '../context/AuthContext';
 import { createPost } from '../services/posts';
 import { getDraft, saveDraft } from '../services/drafts';
 import CameraCapture from '../components/CameraCapture';
+import MultiClipCamera, { type RecordedClip } from '../components/MultiClipCamera';
 import OverlayLayer from '../components/OverlayLayer';
 import TrimControls from '../components/TrimControls';
+import VideoEditorScreen from './VideoEditorScreen';
+import PhotoModeScreen from './PhotoModeScreen';
 import { getErrorMessage } from '../utils/errors';
 import { logEvent } from '../services/analytics';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
@@ -46,6 +49,9 @@ export default function UploadScreen() {
   const { user } = useAuth();
 
   const [showCamera, setShowCamera] = useState(false);
+  const [showMultiClipCamera, setShowMultiClipCamera] = useState(false);
+  const [studioClips, setStudioClips] = useState<RecordedClip[] | null>(null);
+  const [showPhotoMode, setShowPhotoMode] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -119,6 +125,36 @@ export default function UploadScreen() {
   const handleCameraCaptured = (videoUri: string) => {
     setShowCamera(false);
     buildSelection(videoUri);
+  };
+
+  const handleMultiClipDone = (clips: RecordedClip[]) => {
+    setShowMultiClipCamera(false);
+    setStudioClips(clips);
+  };
+
+  const handleStudioGalleryPick = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo library permission needed', 'Enable photo library access in Settings to pick videos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], allowsMultipleSelection: true });
+    if (!result.canceled && result.assets.length > 0) {
+      const clips: RecordedClip[] = result.assets.map((asset) => ({
+        uri: asset.uri,
+        durationSec: asset.duration ? Math.max(1, Math.round(asset.duration / 1000)) : 5,
+        speed: 1,
+      }));
+      setStudioClips(clips);
+    }
+  };
+
+  const handleOpenStudio = () => {
+    Alert.alert('Studio Editor', 'Multi-clip recording with trim, speed, transitions, filters, and cover selection.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Record', onPress: () => setShowMultiClipCamera(true) },
+      { text: 'Upload multiple', onPress: handleStudioGalleryPick },
+    ]);
   };
 
   const handlePickFromGallery = async () => {
@@ -254,6 +290,39 @@ export default function UploadScreen() {
     return <CameraCapture onCaptured={handleCameraCaptured} onClose={() => setShowCamera(false)} />;
   }
 
+  if (showMultiClipCamera) {
+    return <MultiClipCamera onDone={handleMultiClipDone} onClose={() => setShowMultiClipCamera(false)} />;
+  }
+
+  if (studioClips && user) {
+    return (
+      <VideoEditorScreen
+        uid={user.uid}
+        clips={studioClips}
+        onCancel={() => setStudioClips(null)}
+        onPublished={() => {
+          setStudioClips(null);
+          logEvent('post_created', user.uid);
+          navigation.navigate('Home');
+        }}
+      />
+    );
+  }
+
+  if (showPhotoMode && user) {
+    return (
+      <PhotoModeScreen
+        uid={user.uid}
+        onCancel={() => setShowPhotoMode(false)}
+        onPublished={() => {
+          setShowPhotoMode(false);
+          logEvent('post_created', user.uid);
+          navigation.navigate('Home');
+        }}
+      />
+    );
+  }
+
   if (!selection) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -276,6 +345,16 @@ export default function UploadScreen() {
         <TouchableOpacity onPress={handlePickFromGallery} activeOpacity={0.85} style={styles.secondaryButton}>
           <Ionicons name="images-outline" size={20} color={colors.text} />
           <Text style={styles.secondaryButtonLabel}>Choose from Gallery</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handleOpenStudio} activeOpacity={0.85} style={styles.secondaryButton}>
+          <Ionicons name="film-outline" size={20} color={colors.text} />
+          <Text style={styles.secondaryButtonLabel}>Studio Editor (multi-clip)</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setShowPhotoMode(true)} activeOpacity={0.85} style={styles.secondaryButton}>
+          <Ionicons name="images" size={20} color={colors.text} />
+          <Text style={styles.secondaryButtonLabel}>Photo Mode & Templates</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

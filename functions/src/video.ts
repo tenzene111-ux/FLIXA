@@ -40,9 +40,12 @@ const XFADE_TRANSITIONS: Record<Exclude<VideoTransition, 'none'>, string> = {
 };
 
 type VideoClipEdit = {
+  kind: 'video' | 'image';
   storagePath: string;
   trimStartSec: number;
   trimEndSec: number | null;
+  durationSec?: number;
+  kenBurns?: boolean;
   speed: number;
   reversed: boolean;
   transitionToNext: VideoTransition;
@@ -174,6 +177,49 @@ async function downloadFromStorage(storagePath: string, localPath: string): Prom
   await bucket().file(storagePath).download({ destination: localPath });
 }
 
+const PHOTO_CANVAS = 1280;
+
+// Turns a still image into a short synthetic video clip (looped frame +
+// optional slow Ken Burns zoom + a silent audio track) so Photo Mode /
+// Templates can feed images through the exact same trim/speed/reverse/
+// transition/concat machinery below as real video clips — no separate
+// code path needed for the rest of the pipeline.
+async function materializeImageClip(rawImagePath: string, localOutputPath: string, durationSec: number, kenBurns: boolean): Promise<void> {
+  const duration = Math.max(0.5, durationSec);
+  const frames = Math.max(1, Math.round(duration * TARGET_FPS));
+  const canvasFilter = `scale=${PHOTO_CANVAS}:${PHOTO_CANVAS}:force_original_aspect_ratio=increase,crop=${PHOTO_CANVAS}:${PHOTO_CANVAS}`;
+  const motionFilter = kenBurns
+    ? `,zoompan=z='min(zoom+0.0015\\,1.3)':d=${frames}:s=${PHOTO_CANVAS}x${PHOTO_CANVAS}:fps=${TARGET_FPS}`
+    : `,fps=${TARGET_FPS}`;
+
+  await runFfmpeg([
+    '-loop',
+    '1',
+    '-i',
+    rawImagePath,
+    '-f',
+    'lavfi',
+    '-i',
+    'anullsrc=r=44100:cl=stereo',
+    '-t',
+    duration.toFixed(3),
+    '-vf',
+    `${canvasFilter}${motionFilter}`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '128k',
+    '-shortest',
+    localOutputPath,
+  ]);
+}
+
 // Uploads with a firebaseStorageDownloadTokens metadata token so the
 // resulting URL works exactly like a client-uploaded file's
 // getDownloadURL() result — the app's <Video>/<Image> components already
@@ -196,10 +242,19 @@ async function processVideoJob(jobId: string, job: VideoJobDoc): Promise<{ outpu
   try {
     if (job.clips.length === 0) throw new Error('No clips in job.');
 
-    // 1. Download + probe every raw clip.
+    // 1. Download + probe every raw clip. Image clips are first
+    // materialized into a short synthetic mp4 (see materializeImageClip)
+    // so every subsequent step operates on plain video files uniformly.
     const clipFiles = await Promise.all(
       job.clips.map(async (clip, index) => {
         const localPath = path.join(workDir, `clip${index}.mp4`);
+        if (clip.kind === 'image') {
+          const rawImagePath = path.join(workDir, `raw-img${index}`);
+          await downloadFromStorage(clip.storagePath, rawImagePath);
+          const duration = Math.max(0.5, clip.durationSec ?? 3);
+          await materializeImageClip(rawImagePath, localPath, duration, clip.kenBurns ?? false);
+          return { clip, localPath, sourceDuration: duration };
+        }
         await downloadFromStorage(clip.storagePath, localPath);
         const sourceDuration = await probeDurationSec(localPath);
         return { clip, localPath, sourceDuration };

@@ -1,137 +1,124 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { useUserProfile } from '../hooks/useUserProfile';
-import { markNotificationRead, subscribeToNotifications } from '../services/notifications';
-import { requestToJoinAsGuest } from '../services/live';
-import { getErrorMessage } from '../utils/errors';
-import type { Notification } from '../types/notification';
+import { markAllNotificationsRead, subscribeToNotifications } from '../services/notifications';
+import { subscribeToConversations } from '../services/messages';
+import { ConversationRow } from './ConversationsScreen';
+import { NOTIFICATION_ICON, NOTIFICATION_ICON_COLOR, notificationText, timeAgo } from '../components/NotificationRow';
+import { ACTIVITY_GROUP_LABEL, ACTIVITY_GROUP_ORDER, ACTIVITY_GROUP_TYPES, type ActivityGroup, type Notification } from '../types/notification';
+import type { Conversation } from '../types/message';
 import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
-import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
-function timeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
+const MESSAGE_PREVIEW_COUNT = 3;
 
-const NOTIFICATION_ICON: Record<Notification['type'], keyof typeof Ionicons.glyphMap> = {
-  like: 'heart',
-  comment: 'chatbubble-ellipses',
-  follow: 'person-add',
-  battle_invite: 'flash',
-  went_live: 'radio',
-};
+function ActivityRow({ group, notifications, onPress }: { group: ActivityGroup; notifications: Notification[]; onPress: () => void }) {
+  const types = ACTIVITY_GROUP_TYPES[group];
+  const filtered = notifications.filter((n) => types.includes(n.type));
+  const latest = filtered[0];
+  const unreadCount = filtered.filter((n) => !n.read).length;
 
-const NOTIFICATION_ICON_COLOR: Record<Notification['type'], string> = {
-  like: colors.pink,
-  comment: colors.cyan,
-  follow: colors.primary,
-  battle_invite: colors.pink,
-  went_live: colors.pink,
-};
-
-function notificationText(notification: Notification): string {
-  switch (notification.type) {
-    case 'like':
-      return 'liked your video';
-    case 'comment':
-      return `commented: ${notification.commentText}`;
-    case 'follow':
-      return 'started following you';
-    case 'battle_invite':
-      return 'challenged you to a LIVE battle';
-    case 'went_live':
-      return 'is live now';
-  }
+  return (
+    <TouchableOpacity style={styles.activityRow} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.activityIconWrap}>
+        <View style={styles.activityIcon}>
+          <Ionicons
+            name={latest ? NOTIFICATION_ICON[latest.type] : NOTIFICATION_ICON[types[0]]}
+            size={17}
+            color={latest ? NOTIFICATION_ICON_COLOR[latest.type] : NOTIFICATION_ICON_COLOR[types[0]]}
+          />
+        </View>
+        {unreadCount > 0 ? (
+          <View style={styles.activityBadge}>
+            <Text style={styles.activityBadgeLabel}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.activityBody}>
+        <Text style={styles.activityLabel}>{ACTIVITY_GROUP_LABEL[group]}</Text>
+        <Text style={styles.activityPreview} numberOfLines={1}>
+          {latest ? `@${latest.fromUsername} ${notificationText(latest)}` : 'Nothing yet'}
+        </Text>
+      </View>
+      {latest ? <Text style={styles.activityTime}>{timeAgo(latest.createdAt)}</Text> : null}
+      <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
+    </TouchableOpacity>
+  );
 }
 
 export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const { user } = useAuth();
-  const profile = useUserProfile(user?.uid);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
 
   useEffect(() => {
     if (!user) return;
     return subscribeToNotifications(user.uid, setNotifications);
   }, [user]);
 
-  const handleAcceptBattle = (notification: Notification) => {
-    if (!user || !profile || !notification.battleStreamId) return;
-    requestToJoinAsGuest(notification.battleStreamId, user.uid, profile.username)
-      .then(() => {
-        navigation
-          .getParent<BottomTabNavigationProp<MainTabParamList>>()
-          ?.navigate('Home', { screen: 'LiveViewer', params: { streamId: notification.battleStreamId! } });
-      })
-      .catch((error) => Alert.alert("Couldn't join battle", getErrorMessage(error, 'The stream may have ended.')));
-  };
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToConversations(user.uid, setConversations);
+  }, [user]);
 
-  const handlePress = (notification: Notification) => {
-    if (user && !notification.read) {
-      markNotificationRead(user.uid, notification.id).catch(() => {});
-    }
-    if (notification.type === 'battle_invite') {
-      Alert.alert('Battle invite', `@${notification.fromUsername} wants to battle live!`, [
-        { text: 'Decline', style: 'cancel' },
-        { text: 'Accept', onPress: () => handleAcceptBattle(notification) },
-      ]);
-    } else if (notification.type === 'went_live' && notification.wentLiveStreamId) {
-      navigation
-        .getParent<BottomTabNavigationProp<MainTabParamList>>()
-        ?.navigate('Home', { screen: 'LiveViewer', params: { streamId: notification.wentLiveStreamId } });
-    }
+  const hasUnread = useMemo(() => notifications.some((n) => !n.read), [notifications]);
+
+  const handleMarkAllRead = () => {
+    if (user) markAllNotificationsRead(user.uid).catch(() => {});
   };
 
   return (
     <View style={styles.container}>
       <View style={[styles.headerRow, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>Inbox</Text>
-        <TouchableOpacity style={styles.messagesButton} onPress={() => navigation.navigate('Messages')} hitSlop={8}>
-          <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {hasUnread ? (
+            <TouchableOpacity style={styles.headerIconButton} onPress={handleMarkAllRead} hitSlop={8}>
+              <Ionicons name="checkmark-done-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={styles.headerIconButton} onPress={() => navigation.navigate('Messages')} hitSlop={8}>
+            <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <FlatList
-        data={notifications}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="heart-outline" size={40} color={colors.textDim} />
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptySubtitle}>Likes, comments, and new followers show up here</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.row, !item.read && styles.rowUnread]}
-            onPress={() => handlePress(item)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name={NOTIFICATION_ICON[item.type]} size={16} color={NOTIFICATION_ICON_COLOR[item.type]} />
-            </View>
-            <Text style={styles.rowText} numberOfLines={2}>
-              <Text style={styles.rowUsername}>@{item.fromUsername}</Text> {notificationText(item)}
-            </Text>
-            <Text style={styles.rowTime}>{timeAgo(item.createdAt)}</Text>
-            {item.postThumbnailUrl ? <Image source={{ uri: item.postThumbnailUrl }} style={styles.rowThumb} /> : null}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {ACTIVITY_GROUP_ORDER.map((group) => (
+          <ActivityRow
+            key={group}
+            group={group}
+            notifications={notifications}
+            onPress={() => navigation.navigate('ActivityFeed', { group })}
+          />
+        ))}
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Messages</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Messages')} hitSlop={8}>
+            <Text style={styles.seeAll}>See all</Text>
           </TouchableOpacity>
+        </View>
+
+        {conversations.length === 0 ? (
+          <View style={styles.emptyMessages}>
+            <Ionicons name="chatbubbles-outline" size={34} color={colors.textDim} />
+            <Text style={styles.emptyMessagesTitle}>No messages yet</Text>
+            <Text style={styles.emptyMessagesSubtitle}>Message a creator from their profile to start a chat</Text>
+          </View>
+        ) : (
+          user &&
+          conversations
+            .slice(0, MESSAGE_PREVIEW_COUNT)
+            .map((conversation) => <ConversationRow key={conversation.id} conversation={conversation} myUid={user.uid} />)
         )}
-      />
+      </ScrollView>
     </View>
   );
 }
@@ -153,61 +140,104 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
-  messagesButton: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  headerIconButton: {
     padding: 4,
   },
-  listContent: {
+  scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  row: {
+  activityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 10,
+    paddingVertical: 10,
+    gap: 12,
   },
-  rowUnread: {
-    opacity: 1,
+  activityIconWrap: {
+    position: 'relative',
   },
-  rowIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  activityIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 13,
+  activityBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: colors.pink,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  rowUsername: {
+  activityBadgeLabel: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  activityBody: {
+    flex: 1,
+  },
+  activityLabel: {
+    color: colors.text,
+    fontSize: 14,
     fontWeight: '700',
   },
-  rowTime: {
+  activityPreview: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  activityTime: {
     color: colors.textDim,
     fontSize: 11,
   },
-  rowThumb: {
-    width: 40,
-    height: 52,
-    borderRadius: 6,
-    backgroundColor: colors.surfaceAlt,
-  },
-  emptyState: {
+  sectionHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 60,
-    gap: 6,
+    justifyContent: 'space-between',
+    marginTop: 16,
+    marginBottom: 4,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  emptyTitle: {
+  sectionTitle: {
     color: colors.text,
     fontSize: 15,
     fontWeight: '700',
-    marginTop: 4,
   },
-  emptySubtitle: {
-    color: colors.textMuted,
+  seeAll: {
+    color: colors.primary,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  emptyMessages: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 6,
+  },
+  emptyMessagesTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  emptyMessagesSubtitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
 });

@@ -6,6 +6,7 @@ import MenuScreen from '../screens/MenuScreen';
 import WalletScreen from '../screens/WalletScreen';
 import MyPlaylistScreen from '../screens/MyPlaylistScreen';
 import DraftsScreen from '../screens/DraftsScreen';
+import AnalyticsScreen from '../screens/AnalyticsScreen';
 
 export type ProfileStackParamList = {
   MyProfile: { initialTab?: 'posts' | 'saved' | 'tagged' } | undefined;
@@ -14,6 +15,7 @@ export type ProfileStackParamList = {
   Wallet: undefined;
   MyPlaylist: undefined;
   Drafts: undefined;
+  Analytics: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -27,6 +29,7 @@ export default function ProfileStackNavigator() {
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="MyPlaylist" component={MyPlaylistScreen} />
       <Stack.Screen name="Drafts" component={DraftsScreen} />
+      <Stack.Screen name="Analytics" component={AnalyticsScreen} />
     </Stack.Navigator>
   );
 }

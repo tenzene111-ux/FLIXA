@@ -16,7 +16,7 @@ type MenuItem = {
 
 const ITEMS: MenuItem[] = [
   { icon: 'person-outline', label: 'My Profile', onPress: (nav) => nav.goBack() },
-  { icon: 'construct-outline', label: 'Creator Tools', onPress: () => Alert.alert('Creator Tools', 'Coming soon') },
+  { icon: 'bar-chart-outline', label: 'Analytics', onPress: (nav) => nav.navigate('Analytics') },
   { icon: 'wallet-outline', label: 'Wallet', onPress: (nav) => nav.navigate('Wallet') },
   { icon: 'albums-outline', label: 'My Playlists', onPress: (nav) => nav.navigate('MyPlaylist') },
   { icon: 'qr-code-outline', label: 'My QR Code', onPress: () => Alert.alert('My QR Code', 'Coming soon') },

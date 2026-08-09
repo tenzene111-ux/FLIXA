@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { mapSnapshotToPosts } from './posts';
 import type { Post } from '../types/post';
 import type { UserProfile } from '../types/userProfile';
 
@@ -90,23 +91,44 @@ export async function getPopularCreators(): Promise<PopularCreator[]> {
 export async function getTopPost(): Promise<Post | null> {
   const postsQuery = query(collection(db, 'videos'), orderBy('likeCount', 'desc'), limit(1));
   const snapshot = await getDocs(postsQuery);
-  const docSnap = snapshot.docs[0];
-  if (!docSnap) return null;
-  const data = docSnap.data();
-  return {
-    id: docSnap.id,
-    uid: data.uploaderId,
-    caption: data.caption ?? '',
-    videoUrl: data.videoUrl,
-    thumbnailUrl: data.thumbnailUrl,
-    likesCount: data.likeCount ?? 0,
-    commentsCount: data.commentCount ?? 0,
-    viewCount: data.viewCount ?? 0,
-    createdAt: Date.now(),
-    trimStart: data.trimStart ?? 0,
-    trimEnd: data.trimEnd ?? null,
-    overlays: data.overlays ?? [],
-    musicTitle: data.musicTitle ?? '',
-    poll: data.poll ?? null,
-  };
+  return mapSnapshotToPosts(snapshot)[0] ?? null;
+}
+
+export type TrendingSound = { musicTitle: string; count: number };
+
+export async function getTrendingSounds(): Promise<TrendingSound[]> {
+  const postsQuery = query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(100));
+  const snapshot = await getDocs(postsQuery);
+
+  const counts = new Map<string, number>();
+  snapshot.docs.forEach((docSnap) => {
+    const musicTitle = ((docSnap.data().musicTitle as string) ?? '').trim();
+    if (!musicTitle) return;
+    counts.set(musicTitle, (counts.get(musicTitle) ?? 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .map(([musicTitle, count]) => ({ musicTitle, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+}
+
+// Single equality/array-contains filters don't need a composite Firestore
+// index (unlike filter+orderBy on different fields), so these sort
+// client-side instead of adding an orderBy that would require deploying
+// one.
+export async function getVideosByHashtag(tag: string): Promise<Post[]> {
+  const normalized = tag.replace(/^#/, '').trim().toLowerCase();
+  if (!normalized) return [];
+  const postsQuery = query(collection(db, 'videos'), where('hashtags', 'array-contains', normalized), limit(60));
+  const snapshot = await getDocs(postsQuery);
+  return mapSnapshotToPosts(snapshot).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function getVideosByMusicTitle(musicTitle: string): Promise<Post[]> {
+  const normalized = musicTitle.trim();
+  if (!normalized) return [];
+  const postsQuery = query(collection(db, 'videos'), where('musicTitle', '==', normalized), limit(60));
+  const snapshot = await getDocs(postsQuery);
+  return mapSnapshotToPosts(snapshot).sort((a, b) => b.createdAt - a.createdAt);
 }

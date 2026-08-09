@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -15,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { sendMessage, subscribeToMessages } from '../services/messages';
+import { markConversationRead, sendMessage, subscribeToMessages } from '../services/messages';
 import type { ChatMessage } from '../types/message';
 import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
@@ -33,6 +34,11 @@ export default function ChatScreen() {
   useEffect(() => {
     return subscribeToMessages(params.conversationId, setMessages);
   }, [params.conversationId]);
+
+  useEffect(() => {
+    if (!user) return;
+    markConversationRead(params.conversationId, user.uid).catch(() => {});
+  }, [params.conversationId, user, messages.length]);
 
   const handleSend = async () => {
     if (!user || !text.trim()) return;
@@ -65,6 +71,26 @@ export default function ChatScreen() {
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => {
           const isMine = item.senderUid === user?.uid;
+          if (item.kind === 'post_share') {
+            return (
+              <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
+                <View style={[styles.postShareCard, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                  {item.postThumbnailUrl ? <Image source={{ uri: item.postThumbnailUrl }} style={styles.postShareThumb} /> : null}
+                  <View style={styles.postShareBody}>
+                    <View style={styles.postShareTag}>
+                      <Ionicons name="videocam" size={11} color={colors.text} />
+                      <Text style={styles.postShareTagLabel}>Video</Text>
+                    </View>
+                    {item.postCaption ? (
+                      <Text style={styles.postShareCaption} numberOfLines={2}>
+                        {item.postCaption}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+            );
+          }
           return (
             <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
               <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
@@ -151,6 +177,40 @@ const styles = StyleSheet.create({
   bubbleText: {
     color: colors.text,
     fontSize: 14,
+  },
+  postShareCard: {
+    width: 160,
+    borderRadius: 12,
+    overflow: 'hidden',
+    padding: 0,
+  },
+  postShareThumb: {
+    width: '100%',
+    height: 200,
+    backgroundColor: colors.surfaceAlt,
+  },
+  postShareBody: {
+    padding: 10,
+    gap: 6,
+  },
+  postShareTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  postShareTagLabel: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  postShareCaption: {
+    color: colors.text,
+    fontSize: 12,
   },
   emptyState: {
     alignItems: 'center',

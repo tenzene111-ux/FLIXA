@@ -37,6 +37,41 @@ export const onCommentDelete = onDocumentDeleted('videos/{videoId}/comments/{com
   await db.doc(`videos/${event.params.videoId}`).update({ commentCount: FieldValue.increment(-1) });
 });
 
+// saveCount mirrors likeCount's pattern, just derived from each user's own
+// users/{uid}/savedVideos subcollection instead of a videos/{id} one.
+export const onSavedVideoCreate = onDocumentCreated('users/{uid}/savedVideos/{videoId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ saveCount: FieldValue.increment(1) });
+});
+
+export const onSavedVideoDelete = onDocumentDeleted('users/{uid}/savedVideos/{videoId}', async (event) => {
+  await db.doc(`videos/${event.params.videoId}`).update({ saveCount: FieldValue.increment(-1) });
+});
+
+// Creator analytics (see AnalyticsScreen) are built from batched watch
+// sessions, not per-frame events: the client logs one 'video_watch' event
+// per view when the viewer swipes away (see VideoCard.tsx), and this
+// trigger folds it into aggregate counters on the video doc itself —
+// the same server-authoritative-counter pattern as likeCount/commentCount
+// above, just derived from analytics_events instead of a subcollection.
+export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{eventId}', async (event) => {
+  const data = event.data?.data();
+  if (!data || data.type !== 'video_watch') return;
+  const postId = data.postId as string | undefined;
+  if (!postId) return;
+
+  const watchedSec = Math.max(0, Number(data.watchedSec) || 0);
+  const update: Record<string, ReturnType<typeof FieldValue.increment>> = {
+    watchCount: FieldValue.increment(1),
+    totalWatchedSec: FieldValue.increment(watchedSec),
+  };
+  if (data.completed) update.completedViews = FieldValue.increment(1);
+  if (data.reached25) update.retain25 = FieldValue.increment(1);
+  if (data.reached50) update.retain50 = FieldValue.increment(1);
+  if (data.reached75) update.retain75 = FieldValue.increment(1);
+
+  await db.doc(`videos/${postId}`).update(update).catch(() => {});
+});
+
 // Live Q&A questions are sorted by upvoteCount, which has to be a real
 // queryable field rather than client-tallied — same server-authoritative
 // counter pattern as video likes/comments above.
@@ -212,24 +247,58 @@ export const spendCoins = onCall<{ item: keyof typeof SPEND_CATALOG }>(async (re
 // diamond balance in the same transaction, then records the gift so a
 // leaderboard can be built from it (clients can only read the gifts
 // subcollection, never write it — every entry here is backed by a real
-// coin movement).
-const GIFT_COST = 500;
-const GIFT_DIAMONDS = 500; // 1:1 coins-to-diamonds; real platforms take a cut, this doesn't yet.
+// coin movement). Costs are looked up here, server-side, from giftId —
+// never trusted from the client — mirroring src/types/gift.ts on the
+// client, which is display-only.
+// Currency: 1 Coin = Nu. 1 (Bhutanese Ngultrum). Costs are capped at
+// 100,000 coins (Nu. 100,000) for the top gift — mirrors src/types/gift.ts.
+const GIFT_CATALOG: Record<string, { name: string; cost: number }> = {
+  blue_poppy: { name: 'Blue Poppy', cost: 5 },
+  butter_lamp: { name: 'Butter Lamp', cost: 10 },
+  prayer_flag: { name: 'Prayer Flag', cost: 15 },
+  prayer_wheel: { name: 'Prayer Wheel', cost: 20 },
+  white_scarf: { name: 'White Scarf', cost: 30 },
+  happiness_bell: { name: 'Happiness Bell', cost: 40 },
+  lucky_knot: { name: 'Lucky Knot', cost: 50 },
+  bamboo_arrow: { name: 'Bamboo Arrow', cost: 75 },
+  golden_bow: { name: 'Golden Bow', cost: 120 },
+  yak_caravan: { name: 'Yak Caravan', cost: 180 },
+  takin_spirit: { name: 'Takin Spirit', cost: 250 },
+  raven_guardian: { name: 'Raven Guardian', cost: 350 },
+  mini_dzong: { name: 'Mini Dzong', cost: 500 },
+  dochula_blessing: { name: 'Dochula Blessing', cost: 750 },
+  festival_mask_dance: { name: 'Festival Mask Dance', cost: 1000 },
+  punakha_fortress: { name: 'Punakha Fortress', cost: 1500 },
+  tigers_nest: { name: "Tiger's Nest", cost: 2000 },
+  royal_throne: { name: 'Royal Throne', cost: 3000 },
+  golden_dragon: { name: 'Golden Dragon', cost: 5000 },
+  himalayan_palace: { name: 'Himalayan Palace', cost: 8000 },
+  kingdom_crown: { name: 'Kingdom Crown', cost: 12000 },
+  dragon_emperor: { name: 'Dragon Emperor', cost: 18000 },
+  druk_kingdom: { name: 'Druk Kingdom', cost: 25000 },
+  golden_himalaya: { name: 'Golden Himalaya', cost: 40000 },
+  sky_dragon: { name: 'Sky Dragon', cost: 55000 },
+  eternal_bhutan: { name: 'Eternal Bhutan', cost: 75000 },
+  druk_universe: { name: 'Druk Universe', cost: 100000 },
+};
 
 export const sendGift = onCall<{
   contextType: 'video' | 'liveStream';
   contextId: string;
   toUid: string;
   fromUsername: string;
+  giftId: string;
 }>(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
-  const { contextType, contextId, toUid, fromUsername } = request.data;
+  const { contextType, contextId, toUid, fromUsername, giftId } = request.data;
   const fromUid = request.auth.uid;
   if (!contextId || !toUid) throw new HttpsError('invalid-argument', 'Missing contextId or toUid.');
   if (contextType !== 'video' && contextType !== 'liveStream') {
     throw new HttpsError('invalid-argument', 'Unknown contextType.');
   }
   if (fromUid === toUid) throw new HttpsError('failed-precondition', "Can't gift yourself.");
+  const gift = GIFT_CATALOG[giftId];
+  if (!gift) throw new HttpsError('invalid-argument', 'Unknown giftId.');
 
   const collectionName = contextType === 'video' ? 'videos' : 'liveStreams';
   const senderWalletRef = db.doc(`wallets/${fromUid}`);
@@ -240,7 +309,7 @@ export const sendGift = onCall<{
   return db.runTransaction(async (tx) => {
     const senderSnap = await tx.get(senderWalletRef);
     const currentBalance = senderSnap.exists ? (senderSnap.data()?.balance as number) ?? 0 : 0;
-    const nextBalance = currentBalance - GIFT_COST;
+    const nextBalance = currentBalance - gift.cost;
     if (nextBalance < 0) {
       throw new HttpsError('failed-precondition', 'Insufficient balance.');
     }
@@ -249,13 +318,15 @@ export const sendGift = onCall<{
     const currentDiamonds = recipientSnap.exists ? (recipientSnap.data()?.diamonds as number) ?? 0 : 0;
 
     tx.set(senderWalletRef, { balance: nextBalance }, { merge: true });
-    tx.set(senderTxRef, { type: 'gift', label: 'Gift Sent', amount: -GIFT_COST, createdAt: Date.now() });
-    tx.set(recipientWalletRef, { diamonds: currentDiamonds + GIFT_DIAMONDS }, { merge: true });
+    tx.set(senderTxRef, { type: 'gift', label: `Sent ${gift.name}`, amount: -gift.cost, createdAt: Date.now() });
+    tx.set(recipientWalletRef, { diamonds: currentDiamonds + gift.cost }, { merge: true });
     tx.set(giftRef, {
       fromUid,
       fromUsername: fromUsername || 'Someone',
       toUid,
-      amount: GIFT_DIAMONDS,
+      giftId,
+      giftName: gift.name,
+      amount: gift.cost,
       createdAt: Date.now(),
     });
 
@@ -264,8 +335,10 @@ export const sendGift = onCall<{
 });
 
 // Maps App Store / Play Console product IDs to the coin amount they grant.
-// Configure matching products with these IDs in App Store Connect and the
-// Play Console, or edit this map to match the IDs you create there.
+// 1 Coin = Nu. 1 (Bhutanese Ngultrum), so e.g. 'com.flixa.coins.1000' should
+// be priced at Nu. 1,000 in App Store Connect / Play Console. Configure
+// matching products with these IDs there, or edit this map to match the
+// IDs you create there.
 const TOPUP_PRODUCTS: Record<string, number> = {
   'com.flixa.coins.1000': 1000,
   'com.flixa.coins.5000': 5000,

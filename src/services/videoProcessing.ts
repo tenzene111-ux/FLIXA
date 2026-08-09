@@ -35,6 +35,13 @@ export async function uploadRawClip(uid: string, localUri: string, onProgress?: 
   return uploadFile(localUri, `rawClips/${uid}/${Date.now()}-${Math.round(Math.random() * 1e6)}.mp4`, 'video/mp4', onProgress);
 }
 
+// For Photo Mode / Templates clips — the onVideoJobCreate Cloud Function
+// turns these into short synthetic video segments (see materializeImageClip
+// in functions/src/video.ts) before the rest of its pipeline runs.
+export async function uploadRawPhoto(uid: string, localUri: string, onProgress?: (pct: number) => void): Promise<string> {
+  return uploadFile(localUri, `rawPhotos/${uid}/${Date.now()}-${Math.round(Math.random() * 1e6)}.jpg`, 'image/jpeg', onProgress);
+}
+
 export async function uploadSoundFile(
   uid: string,
   localUri: string,

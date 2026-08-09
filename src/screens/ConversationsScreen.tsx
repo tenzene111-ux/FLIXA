@@ -7,11 +7,11 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { getOtherParticipant, subscribeToConversations } from '../services/messages';
+import { getOtherParticipant, isConversationUnread, subscribeToConversations } from '../services/messages';
 import type { Conversation } from '../types/message';
 import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
-function timeAgo(timestamp: number): string {
+export function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) return 'now';
   const minutes = Math.floor(seconds / 60);
@@ -21,10 +21,11 @@ function timeAgo(timestamp: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function ConversationRow({ conversation, myUid }: { conversation: Conversation; myUid: string }) {
+export function ConversationRow({ conversation, myUid }: { conversation: Conversation; myUid: string }) {
   const navigation = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const otherUid = getOtherParticipant(conversation, myUid);
   const otherProfile = useUserProfile(otherUid);
+  const unread = isConversationUnread(conversation, myUid);
 
   if (!otherUid) return null;
 
@@ -41,12 +42,13 @@ function ConversationRow({ conversation, myUid }: { conversation: Conversation; 
         )}
       </View>
       <View style={styles.rowBody}>
-        <Text style={styles.rowUsername}>@{otherProfile?.username ?? '...'}</Text>
-        <Text style={styles.rowMessage} numberOfLines={1}>
+        <Text style={[styles.rowUsername, unread && styles.rowUsernameUnread]}>@{otherProfile?.username ?? '...'}</Text>
+        <Text style={[styles.rowMessage, unread && styles.rowMessageUnread]} numberOfLines={1}>
           {conversation.lastMessage || 'Say hello'}
         </Text>
       </View>
       <Text style={styles.rowTime}>{timeAgo(conversation.lastMessageAt)}</Text>
+      {unread ? <View style={styles.unreadDot} /> : null}
     </TouchableOpacity>
   );
 }
@@ -148,13 +150,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 2,
   },
+  rowUsernameUnread: {
+    color: colors.text,
+  },
   rowMessage: {
     color: colors.textMuted,
     fontSize: 13,
   },
+  rowMessageUnread: {
+    color: colors.text,
+    fontWeight: '600',
+  },
   rowTime: {
     color: colors.textDim,
     fontSize: 11,
+  },
+  unreadDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: colors.primary,
+    marginLeft: 4,
   },
   emptyState: {
     alignItems: 'center',

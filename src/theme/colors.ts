@@ -1,16 +1,23 @@
+// FLIXA brand system. `gradient`/`gradientButton` are both the canonical
+// Pink -> Magenta -> Purple -> Cyan brand gradient — kept as two keys since
+// both names are already used throughout the app, but they're the same
+// stops so every gradient accent (nav, create button, live badges, gifts,
+// progress bars, selected tabs) stays visually unified.
 export const colors = {
-  background: '#0A0A18',
-  surface: '#15142A',
-  surfaceAlt: '#1E1D3A',
-  border: '#2A2946',
-  text: '#FFFFFF',
+  background: '#050509',
+  surface: '#0E0E18',
+  surfaceAlt: '#16162A',
+  border: '#26263C',
+  text: '#F7F7FA',
   textMuted: '#9A98B5',
   textDim: '#6E6C8A',
-  primary: '#7C4DFF',
-  pink: '#FF3D8A',
-  cyan: '#4FD8FF',
-  gradient: ['#4FD8FF', '#B26BFF', '#FF3D8A'] as const,
-  gradientButton: ['#7C4DFF', '#FF3D8A'] as const,
+  primary: '#7A3CFF',
+  pink: '#FF0A6C',
+  magenta: '#D81BFF',
+  purple: '#7A3CFF',
+  cyan: '#18D7E8',
+  gradient: ['#FF0A6C', '#D81BFF', '#7A3CFF', '#18D7E8'] as const,
+  gradientButton: ['#FF0A6C', '#D81BFF', '#7A3CFF', '#18D7E8'] as const,
   danger: '#FF4D6D',
   success: '#3DDC97',
 };
