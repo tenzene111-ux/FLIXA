@@ -1,21 +1,11 @@
 {
   "cli": {
-<<<<<<< HEAD
     "version": ">= 21.7.0",
-=======
-    "version": ">= 12.0.0",
->>>>>>> 09ccdd291e5a47944521d7e66128b40deb3063f0
     "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
-<<<<<<< HEAD
-      "distribution": "internal"
-    },
-    "preview": {
-      "distribution": "internal"
-=======
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -26,7 +16,6 @@
       "android": {
         "buildType": "apk"
       }
->>>>>>> 09ccdd291e5a47944521d7e66128b40deb3063f0
     },
     "production": {
       "autoIncrement": true
