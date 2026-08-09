@@ -56,12 +56,17 @@ function mapConversations(snapshot: QuerySnapshot<DocumentData>): Conversation[]
 }
 
 export function subscribeToConversations(uid: string, onChange: (conversations: Conversation[]) => void) {
-  const conversationsQuery = query(
-    collection(db, 'conversations'),
-    where('participants', 'array-contains', uid),
-    orderBy('lastMessageAt', 'desc')
-  );
-  return onSnapshot(conversationsQuery, (snapshot) => onChange(mapConversations(snapshot)));
+  // array-contains + orderBy on a different field needs a composite index
+  // Firestore doesn't have deployed — sort client-side instead, same fix
+  // as subscribeToUserPosts in services/posts.ts. This one matters more:
+  // it has no error handler, and useUnreadInboxCount calls it from the
+  // tab bar on every app open, so the unindexed query surfaced as an
+  // uncaught console error basically immediately.
+  const conversationsQuery = query(collection(db, 'conversations'), where('participants', 'array-contains', uid));
+  return onSnapshot(conversationsQuery, (snapshot) => {
+    const conversations = mapConversations(snapshot).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    onChange(conversations);
+  });
 }
 
 export function subscribeToMessages(convId: string, onChange: (messages: ChatMessage[]) => void) {

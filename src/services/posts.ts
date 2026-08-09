@@ -85,12 +85,16 @@ export function subscribeToUserPosts(
   onChange: (posts: Post[]) => void,
   onError: (error: Error) => void
 ) {
-  const userPostsQuery = query(
-    collection(db, VIDEOS_COLLECTION),
-    where('uploaderId', '==', uid),
-    orderBy('createdAt', 'desc')
+  // where(uploaderId==) + orderBy(createdAt) on a different field needs a
+  // composite index Firestore doesn't have deployed — same as the
+  // single-equality-filter queries in services/explore.ts, sort client-side
+  // instead so this works with zero extra index deploys.
+  const userPostsQuery = query(collection(db, VIDEOS_COLLECTION), where('uploaderId', '==', uid));
+  return onSnapshot(
+    userPostsQuery,
+    (snapshot) => onChange(mapSnapshotToPosts(snapshot).sort((a, b) => b.createdAt - a.createdAt)),
+    onError
   );
-  return onSnapshot(userPostsQuery, (snapshot) => onChange(mapSnapshotToPosts(snapshot)), onError);
 }
 
 export async function getPostsByIds(ids: string[]): Promise<Post[]> {
