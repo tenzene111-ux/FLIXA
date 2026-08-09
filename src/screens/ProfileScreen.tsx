@@ -149,13 +149,13 @@ export default function ProfileScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.gridThumb}>
+          <TouchableOpacity style={styles.gridThumb} onPress={() => navigation.navigate('SingleVideo', { postId: item.id })} activeOpacity={0.85}>
             <Image source={{ uri: item.thumbnailUrl }} style={StyleSheet.absoluteFill} />
             <View style={styles.gridThumbViews}>
               <Ionicons name="heart" size={11} color={colors.text} />
               <Text style={styles.gridThumbViewsLabel}>{formatCount(item.likesCount)}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
     </View>

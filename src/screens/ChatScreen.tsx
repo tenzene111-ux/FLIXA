@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +23,7 @@ import type { InboxStackParamList } from '../navigation/InboxStackNavigator';
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const { params } = useRoute<RouteProp<InboxStackParamList, 'Chat'>>();
   const { user } = useAuth();
   const otherProfile = useUserProfile(params.otherUid);
@@ -74,7 +75,12 @@ export default function ChatScreen() {
           if (item.kind === 'post_share') {
             return (
               <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
-                <View style={[styles.postShareCard, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                <TouchableOpacity
+                  style={[styles.postShareCard, isMine ? styles.bubbleMine : styles.bubbleTheirs]}
+                  onPress={() => item.postId && navigation.navigate('SingleVideo', { postId: item.postId })}
+                  disabled={!item.postId}
+                  activeOpacity={0.85}
+                >
                   {item.postThumbnailUrl ? <Image source={{ uri: item.postThumbnailUrl }} style={styles.postShareThumb} /> : null}
                   <View style={styles.postShareBody}>
                     <View style={styles.postShareTag}>
@@ -87,7 +93,7 @@ export default function ChatScreen() {
                       </Text>
                     ) : null}
                   </View>
-                </View>
+                </TouchableOpacity>
               </View>
             );
           }

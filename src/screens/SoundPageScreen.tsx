@@ -66,13 +66,13 @@ export default function SoundPageScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <View style={styles.gridThumb}>
+            <TouchableOpacity style={styles.gridThumb} onPress={() => navigation.navigate('SingleVideo', { postId: item.id })} activeOpacity={0.85}>
               <Image source={{ uri: item.thumbnailUrl }} style={StyleSheet.absoluteFill} />
               <View style={styles.gridThumbLikes}>
                 <Ionicons name="heart" size={11} color={colors.text} />
                 <Text style={styles.gridThumbLikesLabel}>{item.likesCount.toLocaleString()}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}

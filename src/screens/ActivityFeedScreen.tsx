@@ -57,6 +57,10 @@ export default function ActivityFeedScreen() {
       navigation
         .getParent<BottomTabNavigationProp<MainTabParamList>>()
         ?.navigate('Home', { screen: 'LiveViewer', params: { streamId: notification.wentLiveStreamId } });
+    } else if ((notification.type === 'like' || notification.type === 'comment') && notification.postId) {
+      navigation.navigate('SingleVideo', { postId: notification.postId });
+    } else if (notification.type === 'follow') {
+      navigation.navigate('UserProfile', { uid: notification.fromUid });
     }
   };
 

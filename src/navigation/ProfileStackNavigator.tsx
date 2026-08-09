@@ -7,6 +7,9 @@ import WalletScreen from '../screens/WalletScreen';
 import MyPlaylistScreen from '../screens/MyPlaylistScreen';
 import DraftsScreen from '../screens/DraftsScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
+import CommentsScreen from '../screens/CommentsScreen';
+import SingleVideoScreen from '../screens/SingleVideoScreen';
 
 export type ProfileStackParamList = {
   MyProfile: { initialTab?: 'posts' | 'saved' | 'tagged' } | undefined;
@@ -16,6 +19,9 @@ export type ProfileStackParamList = {
   MyPlaylist: undefined;
   Drafts: undefined;
   Analytics: undefined;
+  UserProfile: { uid: string };
+  Comments: { postId: string; postOwnerUid: string; postThumbnailUrl: string };
+  SingleVideo: { postId: string };
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -30,6 +36,9 @@ export default function ProfileStackNavigator() {
       <Stack.Screen name="MyPlaylist" component={MyPlaylistScreen} />
       <Stack.Screen name="Drafts" component={DraftsScreen} />
       <Stack.Screen name="Analytics" component={AnalyticsScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+      <Stack.Screen name="Comments" component={CommentsScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="SingleVideo" component={SingleVideoScreen} options={{ presentation: 'fullScreenModal' }} />
     </Stack.Navigator>
   );
 }

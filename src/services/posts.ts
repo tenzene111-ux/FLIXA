@@ -26,41 +26,51 @@ import type { Poll } from '../types/poll';
 
 const VIDEOS_COLLECTION = 'videos';
 
+function mapDocDataToPost(id: string, data: DocumentData): Post {
+  const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
+  return {
+    id,
+    uid: data.uploaderId,
+    caption: data.caption ?? '',
+    videoUrl: data.videoUrl,
+    thumbnailUrl: data.thumbnailUrl,
+    likesCount: data.likeCount ?? 0,
+    commentsCount: data.commentCount ?? 0,
+    viewCount: data.viewCount ?? 0,
+    shareCount: data.shareCount ?? 0,
+    saveCount: data.saveCount ?? 0,
+    watchCount: data.watchCount ?? 0,
+    totalWatchedSec: data.totalWatchedSec ?? 0,
+    completedViews: data.completedViews ?? 0,
+    retain25: data.retain25 ?? 0,
+    retain50: data.retain50 ?? 0,
+    retain75: data.retain75 ?? 0,
+    createdAt,
+    trimStart: data.trimStart ?? 0,
+    trimEnd: data.trimEnd ?? null,
+    overlays: data.overlays ?? [],
+    musicTitle: data.musicTitle ?? '',
+    hashtags: data.hashtags ?? [],
+    poll: data.poll ?? null,
+    privacy: data.privacy ?? 'everyone',
+    commentsSetting: data.commentsSetting ?? 'everyone',
+    allowDownloads: data.allowDownloads ?? true,
+  };
+}
+
 // Shared with services/explore.ts so every place that reads a videos doc
 // into a Post agrees on field defaults instead of hand-duplicating this
 // mapping (which had already drifted once before this was extracted).
 export function mapSnapshotToPosts(snapshot: QuerySnapshot<DocumentData>): Post[] {
-  return snapshot.docs.map((docSnap) => {
-    const data = docSnap.data();
-    const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
-    return {
-      id: docSnap.id,
-      uid: data.uploaderId,
-      caption: data.caption ?? '',
-      videoUrl: data.videoUrl,
-      thumbnailUrl: data.thumbnailUrl,
-      likesCount: data.likeCount ?? 0,
-      commentsCount: data.commentCount ?? 0,
-      viewCount: data.viewCount ?? 0,
-      shareCount: data.shareCount ?? 0,
-      saveCount: data.saveCount ?? 0,
-      watchCount: data.watchCount ?? 0,
-      totalWatchedSec: data.totalWatchedSec ?? 0,
-      completedViews: data.completedViews ?? 0,
-      retain25: data.retain25 ?? 0,
-      retain50: data.retain50 ?? 0,
-      retain75: data.retain75 ?? 0,
-      createdAt,
-      trimStart: data.trimStart ?? 0,
-      trimEnd: data.trimEnd ?? null,
-      overlays: data.overlays ?? [],
-      musicTitle: data.musicTitle ?? '',
-      hashtags: data.hashtags ?? [],
-      poll: data.poll ?? null,
-      privacy: data.privacy ?? 'everyone',
-      commentsSetting: data.commentsSetting ?? 'everyone',
-      allowDownloads: data.allowDownloads ?? true,
-    };
+  return snapshot.docs.map((docSnap) => mapDocDataToPost(docSnap.id, docSnap.data()));
+}
+
+// Powers SingleVideoScreen — opening one video directly (from a Sound/
+// Hashtag grid, a shared-video chat card, or a profile grid) rather than
+// through the swipeable feed.
+export function subscribeToPost(postId: string, onChange: (post: Post | null) => void) {
+  return onSnapshot(doc(db, VIDEOS_COLLECTION, postId), (snapshot) => {
+    onChange(snapshot.exists() ? mapDocDataToPost(snapshot.id, snapshot.data()) : null);
   });
 }
 
