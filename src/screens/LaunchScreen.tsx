@@ -120,16 +120,16 @@ const styles = StyleSheet.create({
   waveLeft: {
     position: 'absolute',
     left: -width * 0.25,
-    top: height * 0.18,
+    top: 0,
     width: width * 0.85,
-    height: height * 0.6,
+    height,
   },
   waveRight: {
     position: 'absolute',
     right: -width * 0.25,
-    top: height * 0.18,
+    top: 0,
     width: width * 0.85,
-    height: height * 0.6,
+    height,
   },
   center: {
     alignItems: 'center',
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   wordmarkAccent: {
-    color: colors.magenta,
+    color: colors.cyan,
   },
   tagline: {
     fontSize: 11,
