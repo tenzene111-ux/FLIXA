@@ -84,6 +84,12 @@ export default function VideoCard({
   const [sendToVisible, setSendToVisible] = useState(false);
   const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const lastTapRef = useRef(0);
+  // Tracks an explicit manual pause so the isActive effect below doesn't
+  // clobber it — if isActive's value gets reasserted for any reason while
+  // this card is still the one on screen (activeKey being re-set to the
+  // same item, a parent re-render, etc.), it shouldn't yank playback back
+  // on and restart the video out from under a viewer who just paused it.
+  const userPausedRef = useRef(false);
   const heartBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
   const discAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -128,11 +134,19 @@ export default function VideoCard({
 
   useEffect(() => {
     if (isActive) {
-      player.currentTime = trimStart;
-      player.play();
-      incrementView(post.id);
-      if (user) logEvent('video_view', user.uid, { postId: post.id });
-      watchStatsRef.current = { maxWatchedSec: 0, reached25: false, reached50: false, reached75: false, reached100: false };
+      // Deliberately gated on userPausedRef rather than always running —
+      // a fresh mount/arrival starts it false so this all fires normally,
+      // but if this effect re-enters while the same card is still active
+      // (activeKey re-set to the same item, a parent re-render, etc.)
+      // an explicit pause should keep winning, not get silently
+      // overridden by a rewind-and-replay plus a duplicate view count.
+      if (!userPausedRef.current) {
+        player.currentTime = trimStart;
+        player.play();
+        incrementView(post.id);
+        if (user) logEvent('video_view', user.uid, { postId: post.id });
+        watchStatsRef.current = { maxWatchedSec: 0, reached25: false, reached50: false, reached75: false, reached100: false };
+      }
       return () => {
         flushWatchStats(trimWindow);
       };
@@ -281,8 +295,10 @@ export default function VideoCard({
   const handlePress = () => {
     if (player.playing) {
       player.pause();
+      userPausedRef.current = true;
     } else {
       player.play();
+      userPausedRef.current = false;
     }
 
     const now = Date.now();
