@@ -53,12 +53,7 @@ export const onSavedVideoDelete = onDocumentDeleted('users/{uid}/savedVideos/{vi
 // trigger folds it into aggregate counters on the video doc itself —
 // the same server-authoritative-counter pattern as likeCount/commentCount
 // above, just derived from analytics_events instead of a subcollection.
-export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{eventId}', async (event) => {
-  const data = event.data?.data();
-  if (!data || data.type !== 'video_watch') return;
-  const postId = data.postId as string | undefined;
-  if (!postId) return;
-
+async function updateVideoWatchCounters(postId: string, data: FirebaseFirestore.DocumentData) {
   const watchedSec = Math.max(0, Number(data.watchedSec) || 0);
   const update: Record<string, ReturnType<typeof FieldValue.increment>> = {
     watchCount: FieldValue.increment(1),
@@ -70,6 +65,140 @@ export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{event
   if (data.reached75) update.retain75 = FieldValue.increment(1);
 
   await db.doc(`videos/${postId}`).update(update).catch(() => {});
+}
+
+// ---- Personalized interest profile (drives the For You ranking in
+// src/services/recommendations.ts on the client) ----
+//
+// A "topic" here is literally a hashtag — there's no separate taxonomy or
+// ML content classifier behind this, so the tags a creator already writes
+// on their caption are the whole content-understanding signal FLIXA has.
+// Weights are simple additive increments with no periodic decay/clamping
+// (a real production version would want a scheduled function to normalize
+// them over time); this is the honest v1, not a claim of a trained model.
+const MAX_TOPICS_PER_EVENT = 5;
+
+function sanitizeProfileKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 80);
+}
+
+async function bumpInterestProfile(
+  uid: string,
+  postId: string | undefined,
+  weight: { topic: number; creator: number; sound: number }
+) {
+  if (!postId) return;
+  const postSnap = await db.doc(`videos/${postId}`).get();
+  if (!postSnap.exists) return;
+  const post = postSnap.data()!;
+
+  const update: Record<string, ReturnType<typeof FieldValue.increment>> = {};
+  const hashtags = ((post.hashtags as string[] | undefined) ?? []).slice(0, MAX_TOPICS_PER_EVENT);
+  hashtags.forEach((tag) => {
+    update[`topics.${sanitizeProfileKey(tag)}`] = FieldValue.increment(weight.topic);
+  });
+  if (post.uploaderId && post.uploaderId !== uid) {
+    update[`creators.${post.uploaderId}`] = FieldValue.increment(weight.creator);
+  }
+  const musicTitle = ((post.musicTitle as string | undefined) ?? '').trim();
+  if (musicTitle) {
+    update[`sounds.${sanitizeProfileKey(musicTitle)}`] = FieldValue.increment(weight.sound);
+  }
+  if (Object.keys(update).length === 0) return;
+
+  await db.doc(`users/${uid}/meta/interestProfile`).set(update, { merge: true }).catch(() => {});
+}
+
+async function bumpCreatorAffinity(uid: string, creatorUid: string | undefined, delta: number) {
+  if (!creatorUid || creatorUid === uid) return;
+  await db
+    .doc(`users/${uid}/meta/interestProfile`)
+    .set({ [`creators.${creatorUid}`]: FieldValue.increment(delta) }, { merge: true })
+    .catch(() => {});
+}
+
+// Search has no real content index behind it (no Algolia/Typesense in this
+// project), so this is a deliberately modest approximation: treat the
+// searched words themselves as topic keys, the same way a hashtag is one.
+async function bumpSearchTopics(uid: string, rawQuery: string) {
+  const words = rawQuery
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3)
+    .slice(0, 4);
+  if (words.length === 0) return;
+  const update: Record<string, ReturnType<typeof FieldValue.increment>> = {};
+  words.forEach((word) => {
+    update[`topics.${sanitizeProfileKey(word)}`] = FieldValue.increment(0.2);
+  });
+  await db.doc(`users/${uid}/meta/interestProfile`).set(update, { merge: true }).catch(() => {});
+}
+
+export const onAnalyticsEventCreate = onDocumentCreated('analytics_events/{eventId}', async (event) => {
+  const data = event.data?.data();
+  if (!data) return;
+  const uid = data.uid as string | undefined;
+  if (!uid) return;
+  // poll_vote logs videoId instead of postId (see PollCard.tsx) — same
+  // underlying video either way.
+  const postId = (data.postId as string | undefined) ?? (data.videoId as string | undefined);
+
+  if (data.type === 'video_watch' && postId) {
+    await updateVideoWatchCounters(postId, data);
+  }
+
+  switch (data.type) {
+    case 'video_watch': {
+      const durationSec = Math.max(0, Number(data.durationSec) || 0);
+      const watchedSec = Math.max(0, Number(data.watchedSec) || 0);
+      const completionRatio = durationSec > 0 ? Math.min(1.5, watchedSec / durationSec) : 0;
+      // A near-instant skip (<15% watched) is a weak negative signal; a
+      // real watch is a positive one that scales with how much of the
+      // video was seen, plus a bonus for actually finishing it.
+      const delta =
+        completionRatio < 0.15 ? -0.05 : 0.05 + completionRatio * 0.15 + (data.completed ? 0.15 : 0);
+      await bumpInterestProfile(uid, postId, { topic: delta, creator: delta * 0.6, sound: delta * 0.5 });
+      break;
+    }
+    case 'like':
+      await bumpInterestProfile(uid, postId, { topic: 0.35, creator: 0.35, sound: 0.2 });
+      break;
+    case 'unlike':
+      await bumpInterestProfile(uid, postId, { topic: -0.2, creator: -0.2, sound: -0.1 });
+      break;
+    case 'comment':
+      await bumpInterestProfile(uid, postId, { topic: 0.4, creator: 0.4, sound: 0.2 });
+      break;
+    case 'share':
+      await bumpInterestProfile(uid, postId, { topic: 0.5, creator: 0.5, sound: 0.25 });
+      break;
+    case 'save':
+      await bumpInterestProfile(uid, postId, { topic: 0.45, creator: 0.45, sound: 0.2 });
+      break;
+    case 'unsave':
+      await bumpInterestProfile(uid, postId, { topic: -0.15, creator: -0.15, sound: -0.05 });
+      break;
+    case 'gift_sent':
+      await bumpInterestProfile(uid, postId, { topic: 0.6, creator: 0.6, sound: 0.3 });
+      break;
+    case 'poll_vote':
+      await bumpInterestProfile(uid, postId, { topic: 0.15, creator: 0.15, sound: 0.05 });
+      break;
+    case 'not_interested':
+      await bumpInterestProfile(uid, postId, { topic: -0.6, creator: -0.4, sound: -0.3 });
+      break;
+    case 'follow':
+      await bumpCreatorAffinity(uid, data.targetUid as string | undefined, 1.0);
+      break;
+    case 'profile_visit':
+      await bumpCreatorAffinity(uid, data.targetUid as string | undefined, 0.15);
+      break;
+    case 'search':
+      await bumpSearchTopics(uid, (data.query as string | undefined) ?? '');
+      break;
+    default:
+      break;
+  }
 });
 
 // Live Q&A questions are sorted by upvoteCount, which has to be a real

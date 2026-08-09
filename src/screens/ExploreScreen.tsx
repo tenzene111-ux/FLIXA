@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +8,8 @@ import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
+import { logEvent } from '../services/analytics';
 import {
   getPopularCreators,
   getTopPost,
@@ -22,11 +24,19 @@ import type { Post } from '../types/post';
 import type { UserProfile } from '../types/userProfile';
 import type { ExploreStackParamList } from '../navigation/ExploreStackNavigator';
 
+// Search has no real content index behind it (no Algolia/Typesense in this
+// project) — logging the query still lets the onAnalyticsEventCreate Cloud
+// Function treat searched words as topic-interest signals (spec §26),
+// debounced so it fires once per pause in typing, not per keystroke.
+const SEARCH_LOG_DEBOUNCE_MS = 800;
+
 const TABS = ['Trending', 'Sounds', 'Effects', 'Live', 'Topics'];
 
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<ExploreStackParamList>>();
+  const { user } = useAuth();
+  const searchLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[] | null>(null);
@@ -50,8 +60,22 @@ export default function ExploreScreen() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (searchLogTimer.current) clearTimeout(searchLogTimer.current);
+    };
+  }, []);
+
   const handleSearch = async (text: string) => {
     setSearchTerm(text);
+
+    if (searchLogTimer.current) clearTimeout(searchLogTimer.current);
+    if (user && text.trim().length >= 3) {
+      searchLogTimer.current = setTimeout(() => {
+        logEvent('search', user.uid, { query: text.trim() });
+      }, SEARCH_LOG_DEBOUNCE_MS);
+    }
+
     if (!text.trim()) {
       setSearchResults(null);
       return;

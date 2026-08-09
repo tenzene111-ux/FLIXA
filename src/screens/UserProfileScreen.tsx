@@ -41,6 +41,13 @@ export default function UserProfileScreen() {
     return subscribeToFollowState(user.uid, params.uid, setIsFollowing);
   }, [user, params.uid]);
 
+  // A recommendation signal (spec §27): repeatedly visiting a creator's
+  // profile increases their relevance in For You even without a follow.
+  useEffect(() => {
+    if (!user || user.uid === params.uid) return;
+    logEvent('profile_visit', user.uid, { targetUid: params.uid });
+  }, [user, params.uid]);
+
   const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likesCount, 0), [posts]);
   const displayName = profile?.displayName ?? '...';
   const username = profile?.username ?? '...';

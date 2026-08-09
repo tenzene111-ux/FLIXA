@@ -13,7 +13,10 @@ export type AnalyticsEventType =
   | 'save'
   | 'unsave'
   | 'gift_sent'
-  | 'poll_vote';
+  | 'poll_vote'
+  | 'not_interested'
+  | 'search'
+  | 'profile_visit';
 
 export function logEvent(type: AnalyticsEventType, uid: string, meta: Record<string, unknown> = {}) {
   addDoc(collection(db, 'analytics_events'), {

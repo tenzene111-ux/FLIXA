@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   increment,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -104,6 +105,30 @@ export async function getPostsByIds(ids: string[]): Promise<Post[]> {
     )
   );
   return results.flatMap((snapshot) => mapSnapshotToPosts(snapshot));
+}
+
+// ---- Bounded candidate queries for the For You feed (services/recommendations.ts)
+// — replaces the old subscribeToFeed-loads-everything approach with several
+// small, capped queries instead of one unbounded collection listener.
+
+export async function getPostsByCreators(uids: string[], perCreatorLimit = 12): Promise<Post[]> {
+  if (uids.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < uids.length; i += 10) {
+    chunks.push(uids.slice(i, i + 10));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(collection(db, VIDEOS_COLLECTION), where('uploaderId', 'in', chunk), limit(chunk.length * perCreatorLimit)))
+    )
+  );
+  return results.flatMap((snapshot) => mapSnapshotToPosts(snapshot)).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function getRecentPosts(count: number): Promise<Post[]> {
+  const postsQuery = query(collection(db, VIDEOS_COLLECTION), orderBy('createdAt', 'desc'), limit(count));
+  const snapshot = await getDocs(postsQuery);
+  return mapSnapshotToPosts(snapshot);
 }
 
 async function uploadFile(

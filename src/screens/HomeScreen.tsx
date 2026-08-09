@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,36 +15,50 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
+import LiveFeedCard from '../components/LiveFeedCard';
 import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToFeed } from '../services/posts';
+import { getPostsByCreators } from '../services/posts';
 import { subscribeToFollowingUids } from '../services/follows';
+import { getForYouFeed, explainRecommendation, type CandidateSource } from '../services/recommendations';
+import {
+  subscribeToInterestProfile,
+  subscribeToHiddenCreators,
+  subscribeToHiddenSounds,
+  soundIdFor,
+} from '../services/interestProfile';
+import { getActiveLiveStreams } from '../services/live';
+import { EMPTY_INTEREST_PROFILE, type InterestProfile } from '../types/interestProfile';
 import type { Post } from '../types/post';
+import type { LiveStream } from '../types/liveStream';
 import type { HomeStackParamList } from '../navigation/HomeStackNavigator';
 
 const { height: windowHeight } = Dimensions.get('window');
 
-// Staged distribution (not ML): every post first gets shown to a small
-// sample audience. Once it's collected enough views to measure, its
-// engagement rate decides whether it gets promoted to a wider audience or
-// stays capped — mirroring TikTok's real small-audience-test-then-scale
-// pipeline as an explicit, explainable formula instead of a black box.
-const SAMPLE_AUDIENCE_SIZE = 50;
-const GOOD_ENGAGEMENT_RATE = 0.05;
-const PROMOTED_MULTIPLIER = 2.2;
-const CAPPED_MULTIPLIER = 0.35;
+type FeedItem = { kind: 'video'; post: Post; reasons: string[] } | { kind: 'live'; stream: LiveStream };
 
-function rankScore(post: Post): number {
-  const ageHours = (Date.now() - post.createdAt) / (1000 * 60 * 60);
-  const freshnessBonus = Math.max(0, 48 - ageHours) * 2;
-  const baseScore = post.likesCount * 3 + post.commentsCount * 5 + freshnessBonus;
+function feedItemKey(item: FeedItem): string {
+  return item.kind === 'video' ? `v:${item.post.id}` : `l:${item.stream.id}`;
+}
 
-  if (post.viewCount < SAMPLE_AUDIENCE_SIZE) {
-    return baseScore;
-  }
+// Mixes a handful of currently-live streams into the ranked For You list
+// (spec: LIVE discovery must not require following the host) — one live
+// card every LIVE_INTERVAL video cards, never more streams than are
+// actually available.
+const LIVE_INTERVAL = 6;
 
-  const engagementRate = (post.likesCount + post.commentsCount) / post.viewCount;
-  return baseScore * (engagementRate >= GOOD_ENGAGEMENT_RATE ? PROMOTED_MULTIPLIER : CAPPED_MULTIPLIER);
+function spliceLiveCards(videoItems: FeedItem[], liveStreams: LiveStream[]): FeedItem[] {
+  if (liveStreams.length === 0) return videoItems;
+  const result: FeedItem[] = [];
+  let liveIndex = 0;
+  videoItems.forEach((item, i) => {
+    result.push(item);
+    if ((i + 1) % LIVE_INTERVAL === 0 && liveIndex < liveStreams.length) {
+      result.push({ kind: 'live', stream: liveStreams[liveIndex] });
+      liveIndex += 1;
+    }
+  });
+  return result;
 }
 
 export default function HomeScreen() {
@@ -56,72 +71,216 @@ export default function HomeScreen() {
   // short of it.
   const itemHeight = windowHeight;
   const { user } = useAuth();
-  const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
-  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToFeed(
-      (nextPosts) => {
-        setPosts(nextPosts);
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-    return unsubscribe;
-  }, []);
+  const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
+  const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
+  const [profile, setProfile] = useState<InterestProfile>(EMPTY_INTEREST_PROFILE);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [hiddenCreatorUids, setHiddenCreatorUids] = useState<Set<string>>(new Set());
+  const [hiddenSoundIds, setHiddenSoundIds] = useState<Set<string>>(new Set());
+  const [liveStreams, setLiveStreams] = useState<LiveStream[]>([]);
+
+  const [forYouItems, setForYouItems] = useState<FeedItem[]>([]);
+  const [followingPosts, setFollowingPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [followingLoading, setFollowingLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  // Fetches read the latest personalization signals through refs rather
+  // than closing over the state directly — this keeps fetchForYou a stable
+  // callback (so an interest-profile update mid-scroll doesn't reshuffle
+  // the list the user is already watching) while still using fresh data
+  // for the next page/refresh.
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const followingUidsRef = useRef(followingUids);
+  followingUidsRef.current = followingUids;
+  const hiddenIdsRef = useRef(hiddenIds);
+  hiddenIdsRef.current = hiddenIds;
+  const hiddenCreatorUidsRef = useRef(hiddenCreatorUids);
+  hiddenCreatorUidsRef.current = hiddenCreatorUids;
+  const hiddenSoundIdsRef = useRef(hiddenSoundIds);
+  hiddenSoundIdsRef.current = hiddenSoundIds;
+  const liveStreamsRef = useRef(liveStreams);
+  liveStreamsRef.current = liveStreams;
+  // Session memory (spec §32): avoid immediately repeating a video or LIVE
+  // card already shown this session, across both the initial load and
+  // subsequent "load more" pages.
+  const shownKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) return;
     return subscribeToFollowingUids(user.uid, setFollowingUids);
   }, [user]);
 
-  const visiblePosts = useMemo(() => {
-    const notHidden = posts.filter((post) => !hiddenIds.has(post.id));
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToInterestProfile(user.uid, setProfile);
+  }, [user]);
 
-    if (activeFeed === 'following') {
-      return notHidden.filter((post) => followingUids.has(post.uid));
-    }
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToHiddenCreators(user.uid, setHiddenCreatorUids);
+  }, [user]);
 
-    // Lightweight ranking (not ML): recent + engaged posts surface first,
-    // with a freshness bonus that decays over 48h so new posts aren't buried.
-    return [...notHidden].sort((a, b) => rankScore(b) - rankScore(a));
-  }, [posts, hiddenIds, activeFeed, followingUids]);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToHiddenSounds(user.uid, setHiddenSoundIds);
+  }, [user]);
+
+  useEffect(() => {
+    getActiveLiveStreams(6)
+      .then(setLiveStreams)
+      .catch(() => {});
+  }, []);
+
+  const isExcludedFromForYou = useCallback((post: Post) => {
+    return (
+      hiddenIdsRef.current.has(post.id) ||
+      shownKeysRef.current.has(`v:${post.id}`) ||
+      hiddenCreatorUidsRef.current.has(post.uid) ||
+      (!!post.musicTitle && hiddenSoundIdsRef.current.has(soundIdFor(post.musicTitle)))
+    );
+  }, []);
+
+  const fetchForYou = useCallback(
+    async (mode: 'reset' | 'append') => {
+      if (!user) return;
+      if (mode === 'reset') shownKeysRef.current.clear();
+
+      const ranked = await getForYouFeed({
+        followingUids: Array.from(followingUidsRef.current),
+        profile: profileRef.current,
+        isExcluded: isExcludedFromForYou,
+      });
+
+      const videoItems: FeedItem[] = ranked.map((r) => ({
+        kind: 'video',
+        post: r.post,
+        reasons: explainRecommendation(r.post, r.sources as CandidateSource[], profileRef.current),
+      }));
+
+      const availableLive = liveStreamsRef.current.filter((s) => !shownKeysRef.current.has(`l:${s.id}`));
+      const withLive = spliceLiveCards(videoItems, availableLive);
+      withLive.forEach((item) => shownKeysRef.current.add(feedItemKey(item)));
+
+      setForYouItems((prev) => (mode === 'reset' ? withLive : [...prev, ...withLive]));
+    },
+    [user, isExcludedFromForYou]
+  );
+
+  const fetchFollowing = useCallback(async () => {
+    if (!user) return;
+    const uids = Array.from(followingUidsRef.current);
+    const posts = uids.length ? await getPostsByCreators(uids, 15) : [];
+    setFollowingPosts(posts);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+    fetchForYou('reset').finally(() => setLoading(false));
+    // Only on first load / user change — profile/following updates apply
+    // to the *next* fetch (refresh or load-more), not a mid-scroll reshuffle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || activeFeed !== 'following') return;
+    setFollowingLoading(true);
+    fetchFollowing().finally(() => setFollowingLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeFeed]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    const run = async () => {
+      if (activeFeed === 'following') {
+        await fetchFollowing();
+        return;
+      }
+      // Mutate the ref directly (not just via the render-time mirror
+      // effect below) so the fetchForYou call right after this actually
+      // sees the freshly-fetched streams instead of last render's list.
+      try {
+        const streams = await getActiveLiveStreams(6);
+        liveStreamsRef.current = streams;
+        setLiveStreams(streams);
+      } catch {
+        // keep the previous live list on failure
+      }
+      await fetchForYou('reset');
+    };
+    run().finally(() => setRefreshing(false));
+  };
+
+  const onEndReached = () => {
+    if (activeFeed !== 'forYou' || loadingMore) return;
+    setLoadingMore(true);
+    fetchForYou('append').finally(() => setLoadingMore(false));
+  };
+
+  const visibleForYou = forYouItems.filter((item) => item.kind === 'live' || !hiddenIds.has(item.post.id));
+  const visibleFollowing = followingPosts.filter((post) => !hiddenIds.has(post.id));
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0) {
-      setActiveId(String(viewableItems[0].key));
+      setActiveKey(String(viewableItems[0].key));
     }
   }).current;
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
 
-  const renderItem = useCallback(
-    ({ item }: { item: Post }) => (
+  const renderVideoItem = useCallback(
+    (post: Post, reasons: string[] | undefined) => (
       <VideoCard
-        post={item}
-        isActive={isFocused && item.id === activeId}
+        post={post}
+        isActive={isFocused && activeKey === `v:${post.id}`}
         height={itemHeight}
-        onPressAuthor={() => navigation.navigate('UserProfile', { uid: item.uid })}
+        reasons={reasons}
+        onPressAuthor={() => navigation.navigate('UserProfile', { uid: post.uid })}
         onPressComments={() =>
-          navigation.navigate('Comments', { postId: item.id, postOwnerUid: item.uid, postThumbnailUrl: item.thumbnailUrl })
+          navigation.navigate('Comments', { postId: post.id, postOwnerUid: post.uid, postThumbnailUrl: post.thumbnailUrl })
         }
-        onNotInterested={() => setHiddenIds((prev) => new Set(prev).add(item.id))}
+        onNotInterested={() => setHiddenIds((prev) => new Set(prev).add(post.id))}
       />
     ),
-    [activeId, isFocused, navigation, itemHeight]
+    [activeKey, isFocused, navigation, itemHeight]
   );
+
+  const renderForYouItem = useCallback(
+    ({ item }: { item: FeedItem }) => {
+      if (item.kind === 'live') {
+        return (
+          <LiveFeedCard
+            stream={item.stream}
+            height={itemHeight}
+            onPress={() => navigation.navigate('LiveViewer', { streamId: item.stream.id })}
+          />
+        );
+      }
+      return renderVideoItem(item.post, item.reasons);
+    },
+    [itemHeight, navigation, renderVideoItem]
+  );
+
+  const renderFollowingItem = useCallback(
+    ({ item }: { item: Post }) => renderVideoItem(item, ['You follow this creator']),
+    [renderVideoItem]
+  );
+
+  const isLoading = activeFeed === 'following' ? followingLoading : loading;
+  const data = activeFeed === 'following' ? visibleFollowing : visibleForYou;
 
   return (
     <View style={styles.container}>
-      {loading ? (
+      {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      ) : visiblePosts.length === 0 ? (
+      ) : data.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="videocam-outline" size={48} color={colors.textDim} />
           <Text style={styles.emptyTitle}>
@@ -131,22 +290,35 @@ export default function HomeScreen() {
             {activeFeed === 'following' ? 'Follow creators to see their videos here' : 'Be the first to post on Flixa'}
           </Text>
         </View>
-      ) : (
+      ) : activeFeed === 'following' ? (
         <FlatList
-          data={visiblePosts}
+          data={visibleFollowing}
           keyExtractor={(item) => item.id}
-          renderItem={renderItem}
+          renderItem={renderFollowingItem}
           pagingEnabled
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
           decelerationRate="fast"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          getItemLayout={(_, index) => ({
-            length: itemHeight,
-            offset: itemHeight * index,
-            index,
-          })}
+          getItemLayout={(_, index) => ({ length: itemHeight, offset: itemHeight * index, index })}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
+        />
+      ) : (
+        <FlatList
+          data={visibleForYou}
+          keyExtractor={feedItemKey}
+          renderItem={renderForYouItem}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          snapToInterval={itemHeight}
+          decelerationRate="fast"
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({ length: itemHeight, offset: itemHeight * index, index })}
+          onEndReachedThreshold={2}
+          onEndReached={onEndReached}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
         />
       )}
 

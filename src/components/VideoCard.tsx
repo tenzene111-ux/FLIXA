@@ -20,9 +20,10 @@ import colors from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { incrementShare, incrementView, subscribeToLikeState, toggleLike } from '../services/posts';
-import { reportPost } from '../services/moderation';
+import { reportPost, type ReportReason } from '../services/moderation';
 import { logEvent } from '../services/analytics';
 import { subscribeIsSaved, toggleSave } from '../services/savedVideos';
+import { hideCreator, hideSound } from '../services/interestProfile';
 import { sendGift } from '../services/wallet';
 import { subscribeToGiftLeaderboard, subscribeToLatestGift, type GiftLeaderboardEntry } from '../services/gifts';
 import { getErrorMessage } from '../utils/errors';
@@ -31,12 +32,14 @@ import GiftPicker from './GiftPicker';
 import OverlayLayer from './OverlayLayer';
 import PollCard from './PollCard';
 import SendToSheet from './SendToSheet';
+import VideoMoreSheet from './VideoMoreSheet';
 import { GIFT_BY_ID, type GiftDefinition } from '../types/gift';
 import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
 const DOUBLE_TAP_WINDOW_MS = 300;
 const SWIPE_TRIGGER_DISTANCE = 60;
+const DEFAULT_REASONS = ['Recommended based on your activity on FLIXA'];
 
 type Props = {
   post: Post;
@@ -45,9 +48,21 @@ type Props = {
   onPressAuthor: () => void;
   onPressComments: () => void;
   onNotInterested: () => void;
+  // Why-this-video reasons from the recommendation engine (services/
+  // recommendations.ts) — optional since contexts like the Following tab
+  // or a single shared video don't go through that pipeline.
+  reasons?: string[];
 };
 
-export default function VideoCard({ post, isActive, height, onPressAuthor, onPressComments, onNotInterested }: Props) {
+export default function VideoCard({
+  post,
+  isActive,
+  height,
+  onPressAuthor,
+  onPressComments,
+  onNotInterested,
+  reasons,
+}: Props) {
   const { user } = useAuth();
   const author = useUserProfile(post.uid);
   const viewerProfile = useUserProfile(user?.uid);
@@ -59,6 +74,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
   const [giftPickerVisible, setGiftPickerVisible] = useState(false);
   const [giftEvent, setGiftEvent] = useState<GiftAnimationEvent | null>(null);
   const [sendToVisible, setSendToVisible] = useState(false);
+  const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const lastTapRef = useRef(0);
   const heartBurst = useRef(new Animated.Value(0)).current;
   const discRotation = useRef(new Animated.Value(0)).current;
@@ -269,26 +285,24 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
     lastTapRef.current = now;
   };
 
-  const handleMoreOptions = () => {
-    Alert.alert('Video options', undefined, [
-      { text: 'Not interested', onPress: onNotInterested },
-      {
-        text: 'Report',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert('Report video', 'Why are you reporting this?', [
-            { text: 'Spam', onPress: () => submitReport('spam') },
-            { text: 'Inappropriate', onPress: () => submitReport('inappropriate') },
-            { text: 'Other', onPress: () => submitReport('other') },
-            { text: 'Cancel', style: 'cancel' },
-          ]);
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const openMoreSheet = () => setMoreSheetVisible(true);
+
+  const handleNotInterestedPress = () => {
+    if (user) logEvent('not_interested', user.uid, { postId: post.id });
+    onNotInterested();
   };
 
-  const submitReport = (reason: 'spam' | 'inappropriate' | 'other') => {
+  const handleHideCreator = () => {
+    if (user) hideCreator(user.uid, post.uid).catch(() => {});
+    onNotInterested();
+  };
+
+  const handleHideSound = () => {
+    if (user && post.musicTitle) hideSound(user.uid, post.musicTitle).catch(() => {});
+    onNotInterested();
+  };
+
+  const submitReport = (reason: ReportReason) => {
     if (!user) return;
     reportPost({ postId: post.id, reporterUid: user.uid, reason })
       .then(() => Alert.alert('Thanks', "We've received your report."))
@@ -320,7 +334,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
 
   return (
     <View style={{ width, height }} {...swipeResponder.panHandlers}>
-      <Pressable style={[styles.card, { width, height }]} onPress={handlePress} onLongPress={handleMoreOptions}>
+      <Pressable style={[styles.card, { width, height }]} onPress={handlePress} onLongPress={openMoreSheet}>
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -354,7 +368,7 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
 
       <GiftAnimationOverlay event={giftEvent} onDone={() => setGiftEvent(null)} />
 
-      <TouchableMoreButton onPress={handleMoreOptions} />
+      <TouchableMoreButton onPress={openMoreSheet} />
 
       <View style={styles.rightActions}>
         <Pressable onPress={onPressAuthor} style={styles.avatarPlaceholder} hitSlop={8}>
@@ -469,6 +483,20 @@ export default function VideoCard({ post, isActive, height, onPressAuthor, onPre
           senderUid={user.uid}
         />
       ) : null}
+
+      <VideoMoreSheet
+        visible={moreSheetVisible}
+        onClose={() => setMoreSheetVisible(false)}
+        reasons={reasons ?? DEFAULT_REASONS}
+        saved={saved}
+        hasSound={!!post.musicTitle}
+        onToggleSave={handleSave}
+        onNotInterested={handleNotInterestedPress}
+        onHideCreator={handleHideCreator}
+        onHideSound={handleHideSound}
+        onShare={handleSharePress}
+        onReport={submitReport}
+      />
     </View>
   );
 }

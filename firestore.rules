@@ -79,6 +79,25 @@ service cloud.firestore {
       match /savedVideos/{videoId} {
         allow read, write: if isOwner(uid);
       }
+
+      // Topic/creator/sound weights that drive the For You ranking (see
+      // functions/src/index.ts's onAnalyticsEventCreate). Server-authoritative
+      // like likeCount/commentCount — the client only ever reads its own.
+      match /meta/{docId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      // Hidden creators/sounds are a direct personal preference, not a
+      // computed score, so — unlike meta/interestProfile above — the owner
+      // writes these directly, same pattern as savedVideos.
+      match /hiddenCreators/{creatorUid} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /hiddenSounds/{soundId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     // ---- Messaging ----

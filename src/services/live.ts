@@ -4,7 +4,9 @@ import {
   deleteDoc,
   doc,
   DocumentData,
+  getDocs,
   increment,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -108,6 +110,16 @@ export function subscribeToLiveStreams(onChange: (streams: LiveStream[]) => void
   return onSnapshot(liveQuery, (snapshot) => {
     onChange(snapshot.docs.map((docSnap) => mapLiveStream(docSnap.id, docSnap.data())));
   });
+}
+
+// One-shot (not a live listener) — used by the For You feed to splice a
+// handful of currently-live streams into the ranked list (services/
+// recommendations.ts), which doesn't need to react to streams starting/
+// ending mid-scroll the way LiveListScreen's live subscription does.
+export async function getActiveLiveStreams(limitCount = 10): Promise<LiveStream[]> {
+  const liveQuery = query(collection(db, LIVE_STREAMS_COLLECTION), where('isLive', '==', true), limit(limitCount));
+  const snapshot = await getDocs(liveQuery);
+  return snapshot.docs.map((docSnap) => mapLiveStream(docSnap.id, docSnap.data()));
 }
 
 export function subscribeToLiveStream(streamId: string, onChange: (stream: LiveStream | null) => void) {
