@@ -12,7 +12,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import colors from '../theme/colors';
@@ -51,8 +50,11 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const isFocused = useIsFocused();
-  const tabBarHeight = useBottomTabBarHeight();
-  const itemHeight = windowHeight - tabBarHeight;
+  // The bottom nav is a translucent floating overlay (LiquidTabBar), not a
+  // layout-reserving bar, so each card pages against the full window height
+  // now — the video sits full-bleed behind the nav rather than stopping
+  // short of it.
+  const itemHeight = windowHeight;
   const { user } = useAuth();
   const [activeFeed, setActiveFeed] = useState<'following' | 'forYou'>('forYou');
   const [posts, setPosts] = useState<Post[]>([]);
