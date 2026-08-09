@@ -27,6 +27,13 @@ const BUBBLE_SIZE = 46;
 const ORB_SIZE = 48;
 const BOTTOM_GAP = 14;
 
+// How tall the floating pill is from the true screen bottom, not counting
+// the safe-area inset — full-bleed screens behind it (VideoCard, LIVE
+// screens) need this to keep their own bottom content from sitting
+// underneath the pill, since it's an overlay rather than a layout-
+// reserving bar.
+export const NAV_FOOTPRINT = BOTTOM_GAP + BAR_HEIGHT;
+
 export default function LiquidTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const unreadCount = useUnreadInboxCount();

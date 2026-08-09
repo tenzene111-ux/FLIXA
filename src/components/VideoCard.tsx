@@ -15,8 +15,10 @@ import {
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { incrementShare, incrementView, subscribeToLikeState, toggleLike } from '../services/posts';
@@ -64,6 +66,12 @@ export default function VideoCard({
   reasons,
 }: Props) {
   const { user } = useAuth();
+  // The bottom nav floats as an overlay rather than reserving layout
+  // space (see LiquidTabBar), so full-bleed content behind it has to add
+  // its own clearance above the pill's real footprint, or the last line
+  // of the caption/username sits underneath it.
+  const insets = useSafeAreaInsets();
+  const navClearance = insets.bottom + NAV_FOOTPRINT;
   const author = useUserProfile(post.uid);
   const viewerProfile = useUserProfile(user?.uid);
   const [liked, setLiked] = useState(false);
@@ -370,7 +378,7 @@ export default function VideoCard({
 
       <TouchableMoreButton onPress={openMoreSheet} />
 
-      <View style={styles.rightActions}>
+      <View style={[styles.rightActions, { bottom: navClearance + 24 }]}>
         <Pressable onPress={onPressAuthor} style={styles.avatarPlaceholder} hitSlop={8}>
           {author?.photoURL ? (
             <Image source={{ uri: author.photoURL }} style={styles.avatarImage} />
@@ -416,7 +424,7 @@ export default function VideoCard({
         </View>
       ) : null}
 
-      <View style={styles.bottomInfo}>
+      <View style={[styles.bottomInfo, { paddingBottom: navClearance + 12 }]}>
         <Pressable onPress={onPressAuthor} hitSlop={8}>
           <Text style={styles.username}>@{displayUsername}</Text>
         </Pressable>
