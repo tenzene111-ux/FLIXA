@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { getVideosByHashtag } from '../services/explore';
 import type { Post } from '../types/post';
 import type { ExploreStackParamList } from '../navigation/ExploreStackNavigator';
@@ -60,7 +61,7 @@ export default function HashtagPageScreen() {
           keyExtractor={(item) => item.id}
           numColumns={GRID_COLUMNS}
           columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={styles.gridContent}
+          contentContainerStyle={[styles.gridContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }]}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="pricetag-outline" size={40} color={colors.textDim} />

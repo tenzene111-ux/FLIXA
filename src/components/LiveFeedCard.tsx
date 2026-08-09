@@ -1,7 +1,9 @@
 import React from 'react';
 import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import type { LiveStream } from '../types/liveStream';
 
 const { width } = Dimensions.get('window');
@@ -17,6 +19,11 @@ type Props = {
 // behind following the host (spec: "Do not force the user to follow the
 // creator first").
 export default function LiveFeedCard({ stream, height, onPress }: Props) {
+  // Same overlay-nav clearance VideoCard applies to its bottomInfo block —
+  // the floating pill sits on top of this full-bleed card too.
+  const insets = useSafeAreaInsets();
+  const navClearance = insets.bottom + NAV_FOOTPRINT;
+
   return (
     <Pressable style={[styles.card, { width, height }]} onPress={onPress}>
       {stream.coverUrl ? (
@@ -35,7 +42,7 @@ export default function LiveFeedCard({ stream, height, onPress }: Props) {
         <Ionicons name="play-circle" size={68} color="rgba(255,255,255,0.85)" />
       </View>
 
-      <View style={styles.info} pointerEvents="none">
+      <View style={[styles.info, { paddingBottom: navClearance + 16 }]} pointerEvents="none">
         <Text style={styles.hostName}>@{stream.hostUsername}</Text>
         <View style={styles.watchingRow}>
           <Ionicons name="eye" size={14} color={colors.text} />

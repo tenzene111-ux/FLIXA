@@ -6,6 +6,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { getVideosByMusicTitle } from '../services/explore';
 import type { Post } from '../types/post';
 import type { ExploreStackParamList } from '../navigation/ExploreStackNavigator';
@@ -58,7 +59,7 @@ export default function SoundPageScreen() {
           keyExtractor={(item) => item.id}
           numColumns={GRID_COLUMNS}
           columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={styles.gridContent}
+          contentContainerStyle={[styles.gridContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }]}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="musical-notes-outline" size={40} color={colors.textDim} />

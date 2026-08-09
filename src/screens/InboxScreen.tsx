@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { markAllNotificationsRead, subscribeToNotifications } from '../services/notifications';
 import { subscribeToConversations } from '../services/messages';
@@ -89,7 +90,7 @@ export default function InboxScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }]}>
         {ACTIVITY_GROUP_ORDER.map((group) => (
           <ActivityRow
             key={group}

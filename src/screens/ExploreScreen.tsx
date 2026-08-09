@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { logEvent } from '../services/analytics';
@@ -307,8 +308,12 @@ function RecentTrendingView({
   onRemoveRecent: (id: string) => void;
   onClearAll: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
-    <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 24 }]}
+      keyboardShouldPersistTaps="handled"
+    >
       {recentSearches.length > 0 ? (
         <>
           <View style={styles.sectionHeaderRow}>
@@ -364,8 +369,12 @@ function AutocompleteView({
   suggestions: AutocompleteSuggestion[];
   onPressSuggestion: (s: AutocompleteSuggestion) => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
-    <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 24 }]}
+      keyboardShouldPersistTaps="handled"
+    >
       {suggestions.length === 0 ? (
         <Text style={styles.emptyText}>Keep typing…</Text>
       ) : (
@@ -417,6 +426,7 @@ function ExploreDashboard(props: {
     goToVideo,
     goToLive,
   } = props;
+  const insets = useSafeAreaInsets();
 
   if (loading) {
     return (
@@ -427,7 +437,10 @@ function ExploreDashboard(props: {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.dashboardContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={[styles.dashboardContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 24 }]}
+      showsVerticalScrollIndicator={false}
+    >
       {trendingSearches.length > 0 ? (
         <Section title="🔥 Trending Now">
           <View style={styles.chipWrap}>
@@ -556,6 +569,8 @@ function SearchResultsView(props: {
 }) {
   const { query, results, searching, activeTab, onChangeTab, videoSort, onChangeVideoSort, trendingSearches, onPressWord } = props;
   const { goToUser, goToHashtag, goToSound, goToVideo, goToLive } = props;
+  const insets = useSafeAreaInsets();
+  const navPad = { paddingBottom: insets.bottom + NAV_FOOTPRINT + 24 };
 
   if (searching || !results) {
     return (
@@ -575,7 +590,7 @@ function SearchResultsView(props: {
   if (isEmpty) {
     const relatedWords = Array.from(new Set(query.toLowerCase().split(/\s+/).filter((w) => w.length >= 3)));
     return (
-      <ScrollView contentContainerStyle={styles.listContent}>
+      <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
         <View style={styles.zeroState}>
           <Ionicons name="search-outline" size={40} color={colors.textDim} />
           <Text style={styles.zeroTitle}>We couldn't find that.</Text>
@@ -623,7 +638,7 @@ function SearchResultsView(props: {
       </ScrollView>
 
       {activeTab === 'Top' ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           {results.creators.length > 0 ? (
             <>
               <Text style={styles.sectionTitle}>Creators</Text>
@@ -666,7 +681,7 @@ function SearchResultsView(props: {
           ) : null}
         </ScrollView>
       ) : activeTab === 'Videos' ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           <View style={styles.sortRow}>
             {(['Relevant', 'Latest', 'Popular'] as VideoSort[]).map((s) => (
               <TouchableOpacity key={s} style={[styles.sortChip, videoSort === s && styles.sortChipActive]} onPress={() => onChangeVideoSort(s)}>
@@ -677,7 +692,7 @@ function SearchResultsView(props: {
           {sortedVideos.length === 0 ? <Text style={styles.emptyText}>No videos found</Text> : <VideoGrid videos={sortedVideos} onPress={goToVideo} />}
         </ScrollView>
       ) : activeTab === 'Creators' ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           {results.creators.length === 0 ? (
             <Text style={styles.emptyText}>No creators found</Text>
           ) : (
@@ -685,7 +700,7 @@ function SearchResultsView(props: {
           )}
         </ScrollView>
       ) : activeTab === 'LIVE' ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           {results.live.length === 0 ? (
             <Text style={styles.emptyText}>No LIVE streams found</Text>
           ) : (
@@ -699,7 +714,7 @@ function SearchResultsView(props: {
           )}
         </ScrollView>
       ) : activeTab === 'Sounds' ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           {results.sounds.length === 0 ? (
             <Text style={styles.emptyText}>No sounds found</Text>
           ) : (
@@ -719,7 +734,7 @@ function SearchResultsView(props: {
           )}
         </ScrollView>
       ) : (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={[styles.listContent, navPad]}>
           {results.hashtags.length === 0 ? (
             <Text style={styles.emptyText}>No hashtags found</Text>
           ) : (

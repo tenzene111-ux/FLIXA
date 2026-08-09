@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { createPlaylist, subscribeToPlaylists } from '../services/playlists';
 import type { ProfileStackParamList } from '../navigation/ProfileStackNavigator';
@@ -41,7 +42,7 @@ export default function MyPlaylistScreen() {
       <FlatList
         data={playlists}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }]}
         renderItem={({ item }) => (
           <View style={styles.row}>
             <Image source={{ uri: item.coverUrl }} style={styles.thumb} />

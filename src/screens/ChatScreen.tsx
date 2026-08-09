@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -15,6 +16,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { markConversationRead, sendMessage, subscribeToMessages } from '../services/messages';
@@ -31,6 +33,26 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  // Chat is a plain push screen (not a modal), so the floating LiquidTabBar
+  // overlays right on top of it — the input row needs its own clearance
+  // above the pill, or the send button ends up sitting underneath the
+  // bar's opaque hit area and becomes untappable. That extra clearance
+  // only makes sense while the keyboard is closed and the pill is
+  // actually visible on screen; once the keyboard is up it covers the
+  // pill anyway; keeping the clearance then would just leave a dead gap
+  // above the keyboard.
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     return subscribeToMessages(params.conversationId, setMessages);
@@ -112,7 +134,12 @@ export default function ChatScreen() {
         }
       />
 
-      <View style={[styles.inputBar, { paddingBottom: insets.bottom + 10 }]}>
+      <View
+        style={[
+          styles.inputBar,
+          { paddingBottom: (keyboardVisible ? insets.bottom : insets.bottom + NAV_FOOTPRINT) + 10 },
+        ]}
+      >
         <TextInput
           style={styles.input}
           placeholder="Message..."

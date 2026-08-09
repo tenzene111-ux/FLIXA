@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToUserPosts } from '../services/posts';
 import type { Post } from '../types/post';
@@ -122,7 +123,7 @@ export default function AnalyticsScreen() {
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="bar-chart-outline" size={40} color={colors.textDim} />

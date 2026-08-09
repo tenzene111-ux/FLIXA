@@ -5,6 +5,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
+import { NAV_FOOTPRINT } from '../navigation/LiquidTabBar';
 import { subscribeToUserPosts } from '../services/posts';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { useAuth } from '../context/AuthContext';
@@ -89,6 +90,7 @@ export default function UserProfileScreen() {
         keyExtractor={(item) => item.id}
         numColumns={GRID_COLUMNS}
         columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={{ paddingBottom: insets.bottom + NAV_FOOTPRINT + 16 }}
         ListHeaderComponent={
           <>
             <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
