@@ -6,7 +6,6 @@ import {
   FlatList,
   Image,
   Modal,
-  PanResponder,
   Pressable,
   Share,
   StyleSheet,
@@ -40,7 +39,6 @@ import type { Post } from '../types/post';
 
 const { width } = Dimensions.get('window');
 const DOUBLE_TAP_WINDOW_MS = 300;
-const SWIPE_TRIGGER_DISTANCE = 60;
 const DEFAULT_REASONS = ['Recommended based on your activity on FLIXA'];
 
 type Props = {
@@ -333,31 +331,11 @@ export default function VideoCard({
       .catch(() => {});
   };
 
-  // A swipe (left or right) jumps to the creator's profile, same as tapping
-  // the avatar/username. The PanResponder lives on the wrapper View so it
-  // can steal a clearly-horizontal drag away from the inner Pressable
-  // (which owns tap/double-tap/long-press) without interfering with the
-  // FlatList's vertical paging.
-  const onPressAuthorRef = useRef(onPressAuthor);
-  onPressAuthorRef.current = onPressAuthor;
-  const swipeResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        Math.abs(gesture.dx) > 20 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
-      onPanResponderRelease: (_, gesture) => {
-        if (Math.abs(gesture.dx) > SWIPE_TRIGGER_DISTANCE) {
-          onPressAuthorRef.current();
-        }
-      },
-    })
-  ).current;
-
   const displayUsername = author?.username ?? '...';
   const discSpin = discRotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <View style={{ width, height }} {...swipeResponder.panHandlers}>
+    <View style={{ width, height }}>
       <Pressable style={[styles.card, { width, height }]} onPress={handlePress} onLongPress={openMoreSheet}>
       <VideoView
         player={player}
