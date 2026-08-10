@@ -336,7 +336,7 @@ export default function VideoCard({
 
   return (
     <View style={{ width, height }}>
-      <Pressable style={[styles.card, { width, height }]} onPress={handlePress} onLongPress={openMoreSheet}>
+      <View style={[styles.card, { width, height }]}>
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -344,6 +344,14 @@ export default function VideoCard({
         nativeControls={false}
         pointerEvents="none"
       />
+
+      {/* A real sibling layer stacked directly on top of VideoView, not
+          just its logical container — the native video surface (backed by
+          ExoPlayer/SurfaceView on Android) can consume taps at the native
+          level before RN's JS responder system ever sees them, regardless
+          of pointerEvents="none" above. This Pressable, being physically
+          above it in the native view stack, intercepts first. */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={handlePress} onLongPress={openMoreSheet} />
 
       {!isPlaying && (
         <View style={styles.pauseOverlay} pointerEvents="none">
@@ -436,7 +444,7 @@ export default function VideoCard({
       <View style={styles.progressTrack} pointerEvents="none">
         <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
-      </Pressable>
+      </View>
 
       <Modal visible={showLeaderboard} transparent animationType="slide" onRequestClose={() => setShowLeaderboard(false)}>
         <View style={styles.modalBackdrop}>
